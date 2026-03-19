@@ -125,10 +125,11 @@ class ChatRequest(BaseModel):
     issues: list
     original_request_text: str = ""
     field_provenance: dict = {}
+    supplier_shortlist: list = []
 
 
 @app.post("/chat")
 def chat_endpoint(body: ChatRequest):
     from chatbot import run_chat_turn  # noqa: PLC0415
 
-    return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text, body.field_provenance)
+    return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text, body.field_provenance, body.supplier_shortlist)

@@ -187,6 +187,11 @@
   <!-- Messages area -->
   <div id="convo-messages" class="flex-1 overflow-y-auto px-4 py-6 pb-40 max-w-2xl mx-auto w-full space-y-3"></div>
 
+  <!-- Policy recheck indicator -->
+  <div id="recheck-indicator" class="hidden text-center py-1">
+    <span class="text-xs text-blue-400 font-medium animate-pulse">Rechecking policy…</span>
+  </div>
+
   <!-- Submit bar (hidden until resolved) -->
   <div id="convo-submit-bar" class="hidden fixed bottom-20 left-0 right-0 flex justify-center px-4 z-10 pb-1">
     <button id="convo-submit-btn"
@@ -337,6 +342,8 @@
   let conversationResolved = false;
   let originalRequestText = '';
   let currentFieldProvenance = null;
+  let isRefinementAfterOutput = false;
+  let currentSupplierShortlist = [];
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -446,12 +453,15 @@
     $('convo-phase').classList.remove('fade-in');
     $('convo-messages').innerHTML = '';
     $('convo-submit-bar').classList.add('hidden');
+    $('convo-submit-btn').textContent = 'Submit Request →';
     currentRequestJson = null;
     currentIssues = [];
     conversationMessages = [];
     conversationResolved = false;
     originalRequestText = '';
     currentFieldProvenance = null;
+    isRefinementAfterOutput = false;
+    currentSupplierShortlist = [];
 
     const chatPhase = $('chat-phase');
     chatPhase.style.display = '';
@@ -553,10 +563,14 @@
     // Keyword auto-submit when already resolved
     if (conversationResolved) {
       const lower = text.toLowerCase();
-      const submitKeywords = ['yes', 'submit', 'go ahead', 'proceed', 'ok', 'okay', 'sure', 'yep', 'yeah'];
+      const submitKeywords = ['yes', 'submit', 'go ahead', 'proceed', 'ok', 'okay', 'sure', 'yep', 'yeah', 're-submit', 'resubmit'];
       if (submitKeywords.some(k => lower.includes(k))) {
         appendMessage('user', text);
-        await proceedToProcess(currentRequestJson, originalRequestText);
+        if (isRefinementAfterOutput) {
+          await resubmitAfterRefinement();
+        } else {
+          await proceedToProcess(currentRequestJson, originalRequestText);
+        }
         return;
       }
     }
@@ -568,16 +582,20 @@
     $('convo-send-btn').disabled = true;
 
     try {
+      const chatBody = {
+        messages: conversationMessages,
+        request_json: currentRequestJson,
+        issues: currentIssues,
+        original_request_text: originalRequestText,
+        field_provenance: currentFieldProvenance,
+      };
+      if (isRefinementAfterOutput && currentSupplierShortlist.length > 0) {
+        chatBody.supplier_shortlist = currentSupplierShortlist;
+      }
       const res = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: conversationMessages,
-          request_json: currentRequestJson,
-          issues: currentIssues,
-          original_request_text: originalRequestText,
-          field_provenance: currentFieldProvenance,
-        }),
+        body: JSON.stringify(chatBody),
       });
 
       hideTypingIndicator();
@@ -603,6 +621,53 @@
 
       if (data.resolved) {
         $('convo-submit-bar').classList.remove('hidden');
+      }
+
+      // Post-chat policy recheck (refinement mode only)
+      if (isRefinementAfterOutput) {
+        $('recheck-indicator').classList.remove('hidden');
+        try {
+          const proc = await fetch('/process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ request_json: currentRequestJson }),
+          });
+          if (proc.ok) {
+            const { output_json } = await proc.json();
+            loadedOutput = output_json;
+            devData.output = output_json;
+            const freshEscs = output_json.escalations || [];
+
+            if (freshEscs.length === 0) {
+              currentIssues = [];
+              conversationResolved = true;
+              const msg = 'Policy check complete: all escalations have been resolved. The request is ready to re-submit.';
+              appendMessage('assistant', msg);
+              conversationMessages.push({ role: 'assistant', content: msg });
+              $('convo-submit-bar').classList.remove('hidden');
+            } else {
+              currentIssues = freshEscs.map(e => ({
+                issue_id: e.escalation_id,
+                severity: e.blocking ? 'critical' : 'warning',
+                type: 'escalation',
+                description: e.trigger,
+                action_required: e.rule,
+              }));
+              const stillBlocking = freshEscs.some(e => e.blocking);
+              if (!stillBlocking) {
+                conversationResolved = true;
+                const nonBlockingCount = freshEscs.length;
+                const msg = `All blocking issues resolved. ${nonBlockingCount} non-blocking notice${nonBlockingCount === 1 ? '' : 's'} remain. The request can be re-submitted.`;
+                appendMessage('assistant', msg);
+                conversationMessages.push({ role: 'assistant', content: msg });
+                $('convo-submit-bar').classList.remove('hidden');
+              }
+            }
+          }
+        } catch (_) { /* silent — don't block user */ }
+        finally {
+          $('recheck-indicator').classList.add('hidden');
+        }
       }
     } catch (e) {
       hideTypingIndicator();
@@ -980,6 +1045,16 @@
     const escalations = out.escalations || [];
     if (escalations.length === 0) return '';
 
+    const hasBlocking = escalations.some(e => e.blocking);
+    const resolveBtn = `<div class="mt-4 flex justify-end">
+      <button
+        type="button"
+        onclick="enterEscalationResolutionMode()"
+        class="rounded-xl border ${hasBlocking ? 'border-red-300 bg-red-600 hover:bg-red-700 text-white' : 'border-amber-300 bg-amber-500 hover:bg-amber-600 text-white'} px-5 py-2.5 text-sm font-semibold shadow transition">
+        ${hasBlocking ? 'Resolve Escalations →' : 'Acknowledge & Refine →'}
+      </button>
+    </div>`;
+
     return `<div class="mt-5 grid gap-3">
       ${escalations.map(e => `<div class="rounded-2xl border p-4 ${e.blocking ? 'border-red-200 bg-red-50/70' : 'border-yellow-200 bg-yellow-50/70'}">
         <div class="flex flex-wrap items-center gap-2">
@@ -993,6 +1068,7 @@
           <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Rule: ${escapeHtml(e.rule || '—')}</span>
         </div>
       </div>`).join('')}
+      ${resolveBtn}
     </div>`;
   }
 
@@ -1067,6 +1143,112 @@
     renderAssumptionsSection(out, currentFieldProvenance, devData.provenance ? devData.provenance.inference_notes : null);
     loadedOutput = out;
     loadedRequestText = (req && req.request_text) || null;
+  }
+
+  // ── Escalation resolution mode ────────────────────────────────────────────
+  function getEscalationOptions(esc) {
+    const rule = (esc.rule || '');
+    const trigger = (esc.trigger || '').toLowerCase();
+    if (rule === 'ER-003' || trigger.includes('threshold') || trigger.includes('high-value')) {
+      return 'Options:\n• **Confirm you have approval authority** → I\'ll clear this escalation and proceed\n• **Request approval first** → let me know when you have it';
+    }
+    if (rule === 'ER-002' || trigger.includes('restricted')) {
+      const alts = (currentSupplierShortlist || []).map(s => s.supplier_name).filter(Boolean).slice(0, 3);
+      const altText = alts.length > 0 ? `\n• **Switch to an alternative** (e.g. ${alts.join(', ')})` : '';
+      return `Options:\n• **Override the restriction** with justification${altText}\n• **Remove the supplier preference** entirely`;
+    }
+    if (trigger.includes('budget') || trigger.includes('insufficient')) {
+      return 'Options:\n• **Increase the budget** — tell me the new amount\n• **Reduce the quantity** — tell me the new quantity';
+    }
+    if (rule === 'ER-005' || trigger.includes('data residency')) {
+      return 'Options:\n• **Remove the data residency requirement** if it\'s not strictly needed\n• **Acknowledge and proceed** (risk accepted)';
+    }
+    if (rule === 'ER-008' || trigger.includes('usd')) {
+      return 'Options:\n• **Change currency** (e.g. to EUR or CHF)\n• **Acknowledge and proceed** (Regional Compliance Lead will be notified)';
+    }
+    if (rule === 'ER-006' || trigger.includes('capacity risk')) {
+      return 'This is non-blocking. You can **acknowledge and proceed** or split the order.';
+    }
+    return 'How would you like to proceed?';
+  }
+
+  function buildEscalationOpeningMessage(escalations) {
+    const blocking = escalations.filter(e => e.blocking);
+    const nonBlocking = escalations.filter(e => !e.blocking);
+    let msg = '';
+
+    if (blocking.length > 0) {
+      msg = `I found **${blocking.length} blocking escalation${blocking.length > 1 ? 's' : ''}** that must be resolved before this request can proceed.`;
+      if (nonBlocking.length > 0) {
+        msg += ` There ${nonBlocking.length === 1 ? 'is' : 'are'} also **${nonBlocking.length} non-blocking notice${nonBlocking.length > 1 ? 's' : ''}**.`;
+      }
+      msg += '\n\nLet\'s tackle the first blocking issue:\n\n';
+      const first = blocking[0];
+      msg += `**${first.rule} — ${first.escalation_id}:** ${first.trigger}\n\n`;
+      msg += getEscalationOptions(first);
+    } else {
+      msg = `There ${nonBlocking.length === 1 ? 'is' : 'are'} **${nonBlocking.length} non-blocking notice${nonBlocking.length > 1 ? 's' : ''}**.\n\n`;
+      const first = nonBlocking[0];
+      msg += `**${first.rule} — ${first.escalation_id}:** ${first.trigger}\n\n`;
+      msg += getEscalationOptions(first);
+    }
+    return msg;
+  }
+
+  function enterEscalationResolutionMode() {
+    const out = loadedOutput || {};
+    const escalations = out.escalations || [];
+    if (escalations.length === 0) return;
+
+    // Convert escalations → issues format
+    const escalationIssues = escalations.map(e => ({
+      issue_id: e.escalation_id,
+      severity: e.blocking ? 'critical' : 'warning',
+      type: 'escalation',
+      description: e.trigger,
+      action_required: e.rule,
+    }));
+
+    // Capture supplier shortlist for ER-002 context
+    currentSupplierShortlist = out.supplier_shortlist || [];
+
+    // Use the request_json from the last processed output
+    const outputRequestJson = devData.parsed || {};
+    currentRequestJson = { ...outputRequestJson };
+    currentIssues = escalationIssues;
+    isRefinementAfterOutput = true;
+    conversationResolved = false;
+
+    // Build opening message
+    const openingMessage = buildEscalationOpeningMessage(escalations);
+
+    // Keep existing conversation messages and append the new escalation summary
+    conversationMessages.push({ role: 'assistant', content: openingMessage });
+
+    // Update submit button label
+    $('convo-submit-btn').textContent = 'Re-submit Request →';
+
+    // Update convo phase header pill
+    const pill = document.querySelector('#convo-phase .bg-amber-50');
+    if (pill) pill.textContent = 'Resolving escalations…';
+
+    // Hide result, show convo phase
+    $('result-phase').classList.add('hidden');
+    $('convo-submit-bar').classList.add('hidden');
+
+    const phase = $('convo-phase');
+    phase.classList.remove('hidden');
+    phase.classList.add('fade-in');
+
+    // Re-render all messages (including prior conversation if any)
+    const container = $('convo-messages');
+    container.innerHTML = '';
+    for (const msg of conversationMessages) {
+      appendMessage(msg.role, msg.content);
+    }
+
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    setTimeout(() => $('convo-input').focus(), 100);
   }
 
   // ── Main submit flow ──────────────────────────────────────────────────────
@@ -1198,8 +1380,57 @@
   });
 
   $('convo-submit-btn').addEventListener('click', () => {
-    proceedToProcess(currentRequestJson, originalRequestText);
+    if (isRefinementAfterOutput) {
+      resubmitAfterRefinement();
+    } else {
+      proceedToProcess(currentRequestJson, originalRequestText);
+    }
   });
+
+  async function resubmitAfterRefinement() {
+    $('convo-phase').classList.add('hidden');
+    $('convo-phase').classList.remove('fade-in');
+    resetResults();
+    showLoading('Re-evaluating suppliers and policies…');
+    try {
+      const processRes = await fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_json: currentRequestJson }),
+      });
+      if (!processRes.ok) {
+        const err = await processRes.json().catch(() => ({ detail: processRes.statusText }));
+        throw new Error(err.detail || processRes.statusText);
+      }
+      const { output_json, request_json: returnedReq } = await processRes.json();
+      devData.output = output_json;
+      devData.parsed = returnedReq || currentRequestJson;
+
+      updateLoadingStatus('Generating AI explanation…');
+      const explainRes = await fetch('/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_json }),
+      });
+      if (!explainRes.ok) {
+        const err = await explainRes.json().catch(() => ({ detail: explainRes.statusText }));
+        throw new Error(err.detail || explainRes.statusText);
+      }
+      const { explanation } = await explainRes.json();
+
+      // Reset refinement flag — new output page starts fresh
+      isRefinementAfterOutput = false;
+      currentSupplierShortlist = [];
+
+      hideLoading();
+      renderDataSections(output_json, returnedReq || currentRequestJson);
+      await transitionToResults();
+      await renderExplanationAnimated(explanation);
+    } catch (e) {
+      hideLoading();
+      alert('Error: ' + e.message);
+    }
+  }
 
   // ── New Request ───────────────────────────────────────────────────────────
   $('btn-new-request').addEventListener('click', async () => {

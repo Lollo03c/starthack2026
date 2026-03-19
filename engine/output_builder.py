@@ -41,6 +41,9 @@ def build_output(
     # --- Escalations ----------------------------------------------------------
     raw_escalations = _collect_escalations(scored, eliminated, ctx, validation_issues, data)
     deduped_escalations = _deduplicate_escalations(raw_escalations)
+    overrides = request_dict.get("escalation_overrides") or {}
+    if overrides:
+        deduped_escalations = _apply_escalation_overrides(deduped_escalations, overrides)
     _assign_escalation_ids(deduped_escalations)
 
     # --- Recommendation -------------------------------------------------------
@@ -450,6 +453,21 @@ def _deduplicate_escalations(escalations: list[Escalation]) -> list[Escalation]:
     # Sort: blocking first, then by rule_id
     result.sort(key=lambda e: (not e.blocking, e.rule_id))
     return result
+
+
+def _apply_escalation_overrides(escalations: list[Escalation], overrides: dict) -> list[Escalation]:
+    """Remove escalations that the user has explicitly overridden/acknowledged."""
+    _override_map = {
+        "threshold_exceeded": "ER-003",
+        "restricted_supplier": "ER-002",
+        "single_supplier_risk": "ER-006",
+        "data_residency": "ER-005",
+        "usd_compliance": "ER-008",
+    }
+    rules_to_skip = {rule_id for key, rule_id in _override_map.items() if overrides.get(key)}
+    if not rules_to_skip:
+        return escalations
+    return [e for e in escalations if e.rule_id not in rules_to_skip]
 
 
 def _assign_escalation_ids(escalations: list[Escalation]) -> None:
