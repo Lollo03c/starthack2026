@@ -179,17 +179,18 @@ The explanation should cover: system design overview, clear reasoning logic, how
 | `POST` | `/chat` | `{ messages, request_json, issues, original_request_text?, field_provenance?, supplier_shortlist? }` → `{ reply, updated_request_json, updated_field_provenance, remaining_issues, resolved }` |
 | `POST` | `/results-chat` | `{ messages, output_json, request_json }` → `{ messages: [...], updated_request_json, has_field_updates }` — presents results in chat, handles Q&A + escalation resolution |
 
-### UI Flow (Split-Screen Architecture)
-1. Initial state: full-viewport centered chat bar (ChatGPT-style), headline + subtext, optional Business Unit / Country / Currency pill inputs
-2. Submit (Enter or arrow button) → chat bar fades+slides out → loading overlay with pulsing dots
-3. Pipeline: `POST /parse` → `POST /validate` → (if invalid: enter `#convo-phase` chat mode to resolve issues) → `POST /process` → `activateSplitScreen()` → `POST /results-chat`
-4. **Split-screen view** (`#split-phase`): left panel shows structured output (status banner, request details, supplier comparison with ranking table, alternatives, excluded suppliers, escalations), right panel has chat for Q&A and escalation resolution
-5. After escalation resolution via chat, silent `/process` recheck updates the output AND auto-refreshes the left panel via `refreshOutputPanel()`
-6. "← New Request" button in sticky top bar resets and restores the chat bar (clears both split-phase and convo-phase)
-7. "Load example request" link loads demo data and presents via split-screen with `/results-chat` in chat
+### UI Flow (Single-Window Chat + Dashboard Toggle)
+1. Initial state: full-viewport centered hero (brand, headline, subtext) with chat input bar at bottom
+2. Submit (Enter or arrow button) → hero fades out (CSS transition), top bar appears, user message shows as chat bubble, typing indicator appears
+3. Pipeline: `POST /parse` → `POST /validate` → (if invalid: clarification appears in same chat — no phase switch) → auto-proceed when resolved → `POST /process` → `POST /results-chat`
+4. **Results in chat**: LLM summary messages appear as chat bubbles + **"Open Dashboard"** button + suggestion chips + forward button
+5. **Dashboard panel** (`#dashboard-panel`): toggleable left panel with structured output (status banner, escalations, supplier comparison, alternatives, excluded). Toggled via "Open Dashboard" button in chat or "Show/Hide Dashboard" button in top bar
+6. After escalation resolution via chat, silent `/process` recheck updates dashboard content via `refreshOutputPanel()`
+7. "← New Request" button in top bar calls `resetToInitial()` — hides dashboard, clears messages, fades hero back in
 8. Dev panel (bottom-right corner, only visible at `?dev=true`): three buttons open dark modals — Parsed JSON, Output JSON, Provenance / Notes
-9. Responsive: below 1024px (`lg` breakpoint), panels stack vertically — output on top (40vh max), chat below
-10. Old results page (`result-phase`) code remains but is unused in current flow
+9. Responsive: below 1024px, dashboard becomes full-screen overlay (fixed, z-30) instead of side panel
+10. **Single container architecture**: one `#messages` div, one `#chat-input` bar, one set of event listeners — no message migration between containers
+11. Old results page (`result-phase`) code remains but is unused in current flow
 
 ### Key Implementation Decisions & Constraints
 
@@ -216,8 +217,10 @@ The explanation should cover: system design overview, clear reasoning logic, how
 - **Escalation override map** — both `chatbot.py` (`_check_escalation_issues`) and `engine/output_builder.py` (`_apply_escalation_overrides`) use the same override keys: `threshold_exceeded` → ER-003, `restricted_supplier` → ER-002, `insufficient_quotes` → ER-004, `single_supplier_risk` → ER-006, `data_residency` → ER-005, `usd_compliance` → ER-008. New escalation rules must be added to both maps.
 - **Chatbot max_tokens** raised to 800 (from 400) to accommodate detailed supplier comparisons in escalation resolution.
 - **Post-chat policy recheck** — after each `/chat` turn in refinement mode, frontend silently calls `/process` to detect cascade effects (new/removed escalations from field updates). Visual indicator "Rechecking policy…" shown during recheck.
-- **Frontend state** — `isResultsChat` flag controls whether `handleConvoSend` routes to `/results-chat` (results Q&A) or `/chat` (validation/escalation). Reset on "New Request".
-- **Split-screen layout** — `#split-phase` contains output panel (left, `#output-panel`) and chat panel (right, `#split-convo-messages`). `activateSplitScreen(out, req)` hides other phases, renders output, migrates messages from `#convo-messages`. `refreshOutputPanel(out, req)` re-renders the left panel (called after every `/process` recheck). Helper functions `getActiveMessageContainer()`, `getActiveInput()`, `getActiveSendBtn()`, `getActiveRecheckIndicator()` abstract over which phase is visible. `hideTypingIndicator()` removes ALL `#typing-wrapper` elements to prevent duplicates from container migrations.
+- **Frontend state** — `isResultsChat` flag controls whether `handleConvoSend` routes to `/results-chat` (results Q&A) or `/chat` (validation/escalation). Reset on "New Request". `dashboardReady` tracks whether dashboard content has been populated. `isDashboardVisible` tracks toggle state.
+- **Single-window layout** — unified `#app` container with `#dashboard-panel` (flex sibling, hidden initially) and `#chat-area` (hero + messages + input). No more `#chat-phase`, `#convo-phase`, `#split-phase`, or `#loading-overlay`. Single `#messages` container, single `#chat-input` bar, single set of event listeners. `getActiveMessageContainer()` / `getActiveInput()` / etc. now simply return the single element.
+- **Dashboard toggle** — `toggleDashboard(forceShow)` swaps `.dashboard-hidden` / `.dashboard-visible` CSS classes on `#dashboard-panel`. `.dashboard-hidden` uses `width: 0; overflow: hidden` with CSS transitions. `.dashboard-visible` uses `width: 50%`. On mobile (< 1024px), dashboard becomes a fixed full-screen overlay. Top bar has "Show/Hide Dashboard" button (hidden until results ready). "Open Dashboard" button also inserted into chat messages after results.
+- **Auto-proceed on resolution** — when `/chat` returns `resolved: true`, frontend automatically appends "We have everything we need" message and calls `proceedToProcess()`. No submit button needed.
 - **Output panel sections** — `buildStatusBannerHtml()`, `buildRequestDetailsHtml()`, `renderEscalationsPanelHtml()` return HTML strings (vs existing DOM-mutating versions). Reuses `renderTopRecommendationVisual()`, `renderAlternativesVisual()`, `renderExcludedVisual()` which already return HTML strings. "Show ranking" toggle uses `closest('section')` fallback for output panel context.
 - **Status banner** — `buildStatusBannerHtml()` has two visual modes: `can_proceed` → full green hero banner with reason text; `proceed_with_conditions` → compact amber strip ("Conditions Apply — see escalations below"); `cannot_proceed` → compact red strip ("Blocked — resolve escalations below"). Also accepts legacy `"proceed"` as green for backwards compat.
 - **Output panel section order** — `refreshOutputPanel()` renders in this order: (1) status indicator, (2) escalations sorted blocking-first, (3) mandated supplier constraint (skipped if conflict — escalation card covers it), (4) top recommendation + ranking, (5) alternatives, (6) excluded suppliers wrapped in a collapsed `<details>` element with chevron icon and count badge. `buildRequestDetailsHtml()` call removed (function still exists as dead code).

@@ -8,10 +8,6 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     /* ── Animations ───────────────────────────────────────────────── */
-    @keyframes fadeSlideDown {
-      from { opacity: 1; transform: translateY(0); }
-      to   { opacity: 0; transform: translateY(30px); }
-    }
     @keyframes fadeSlideUp {
       from { opacity: 0; transform: translateY(14px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -25,9 +21,6 @@
       40%           { opacity: 1;   transform: scale(1); }
     }
 
-    .fade-out-down {
-      animation: fadeSlideDown 0.4s ease forwards;
-    }
     .fade-in {
       animation: fadeIn 0.5s ease forwards;
     }
@@ -36,17 +29,12 @@
       animation: fadeSlideUp 0.5s ease forwards;
     }
 
-    /* Pulsing dots loader */
-    .dot-flashing span {
-      display: inline-block;
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #3b82f6;
-      margin: 0 3px;
-      animation: pulse-dot 1.2s infinite ease-in-out;
+    /* Hero fade-out */
+    .hero-fade-out {
+      opacity: 0;
+      transform: translateY(-20px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
     }
-    .dot-flashing span:nth-child(2) { animation-delay: 0.2s; }
-    .dot-flashing span:nth-child(3) { animation-delay: 0.4s; }
 
     /* Prose styles for markdown */
     .prose h2 { font-size: 1rem; font-weight: 700; margin-top: 1.4rem; margin-bottom: 0.4rem; color: #1e3a5f; }
@@ -60,19 +48,11 @@
     details[open] .details-chevron { transform: rotate(90deg); }
     details summary::-webkit-details-marker { display: none; }
 
-    /* Chat textarea auto-grow hint */
-    #request-input {
-      min-height: 52px;
-      max-height: 200px;
-      resize: none;
-      overflow-y: auto;
-    }
-
     /* Scrollbar subtle */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 
-    /* ── Conversation chat bubbles ─────────────────────────────────── */
+    /* ── Chat bubbles ─────────────────────────────────────────────── */
     .msg-ai {
       max-width: 82%;
       background: white;
@@ -104,14 +84,14 @@
     .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
     .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
-    #convo-input, #split-convo-input {
+    #chat-input {
       min-height: 40px;
       max-height: 120px;
       resize: none;
       overflow-y: auto;
     }
 
-    /* ── Split-screen layout ──────────────────────────────────── */
+    /* ── Dashboard panel ──────────────────────────────────────── */
     @keyframes panelFadeIn {
       from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -119,27 +99,41 @@
     .panel-fade-in {
       animation: panelFadeIn 0.4s ease forwards;
     }
-    #output-panel section {
+    #dashboard-panel section {
       animation: panelFadeIn 0.35s ease forwards;
     }
-    #output-panel section:nth-child(2) { animation-delay: 80ms; }
-    #output-panel section:nth-child(3) { animation-delay: 160ms; }
-    #output-panel section:nth-child(4) { animation-delay: 240ms; }
-    #output-panel section:nth-child(5) { animation-delay: 320ms; }
+    #dashboard-panel section:nth-child(2) { animation-delay: 80ms; }
+    #dashboard-panel section:nth-child(3) { animation-delay: 160ms; }
+    #dashboard-panel section:nth-child(4) { animation-delay: 240ms; }
+    #dashboard-panel section:nth-child(5) { animation-delay: 320ms; }
+
+    /* Dashboard transitions */
+    .dashboard-hidden {
+      width: 0 !important;
+      min-width: 0 !important;
+      padding: 0 !important;
+      overflow: hidden;
+      border-right: none !important;
+      transition: width 0.4s ease, padding 0.4s ease, min-width 0.4s ease;
+    }
+    .dashboard-visible {
+      width: 50%;
+      min-width: 340px;
+      overflow-y: auto;
+      border-right: 1px solid #e5e7eb;
+      transition: width 0.4s ease, padding 0.4s ease, min-width 0.4s ease;
+    }
 
     @media (max-width: 1023px) {
-      .split-responsive {
-        flex-direction: column !important;
-      }
-      .split-responsive > .split-output {
-        max-height: 40vh;
+      .dashboard-visible {
+        position: fixed;
+        inset: 0;
+        top: 49px; /* below top bar */
         width: 100% !important;
+        min-width: 100% !important;
+        z-index: 30;
+        background: #f9fafb;
         border-right: none !important;
-        border-bottom: 1px solid #e5e7eb;
-      }
-      .split-responsive > .split-chat {
-        width: 100% !important;
-        flex: 1;
       }
     }
   </style>
@@ -147,148 +141,74 @@
 <body class="bg-gray-50 min-h-screen font-sans text-sm text-gray-800 antialiased">
 
 <!-- ══════════════════════════════════════════════════════════════
-     CHAT PHASE  (visible on load)
+     UNIFIED APP LAYOUT
 ══════════════════════════════════════════════════════════════ -->
-<div id="chat-phase" class="min-h-screen flex flex-col items-center justify-center px-4 pb-16">
+<div id="app" class="h-screen flex flex-col">
 
-  <!-- Brand -->
-  <div class="flex items-center gap-2 mb-10 select-none">
-    <div class="w-9 h-9 bg-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow">CQ</div>
-    <span class="text-gray-500 font-medium text-base tracking-tight">ChainIQ · Sourcing Intelligence</span>
-  </div>
-
-  <!-- Headline -->
-  <h1 class="text-3xl font-bold text-gray-900 text-center mb-2 leading-tight max-w-xl">
-    Describe your procurement need
-  </h1>
-  <p class="text-gray-500 text-center mb-8 max-w-md leading-relaxed">
-    Tell us what you need to purchase — our AI will analyse suppliers, policies, and pricing.
-  </p>
-
-  <!-- Chat bar -->
-  <div class="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-lg px-4 py-3 flex items-end gap-3">
-    <textarea
-      id="request-input"
-      class="flex-1 bg-transparent outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed"
-      placeholder="e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k"
-      rows="2"
-    ></textarea>
-    <button id="send-btn"
-      class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
-      title="Submit">
-      <!-- Arrow icon -->
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-      </svg>
-    </button>
-  </div>
-
-  <!-- Hidden optional fields (values kept for metadata compatibility) -->
-  <input id="input-business-unit" type="hidden" />
-  <input id="input-country" type="hidden" />
-  <select id="input-currency" class="hidden">
-    <option value="EUR">EUR</option>
-    <option value="CHF">CHF</option>
-    <option value="USD">USD</option>
-    <option value="GBP">GBP</option>
-  </select>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════
-     CONVERSATION PHASE  (validation chat, hidden by default)
-══════════════════════════════════════════════════════════════ -->
-<div id="convo-phase" class="hidden min-h-screen flex flex-col bg-gray-50">
-
-  <!-- Top bar -->
-  <div class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
-      <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
-    </div>
-    <span class="text-xs text-amber-600 font-medium bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Clarifying request…</span>
-  </div>
-
-  <!-- Messages area -->
-  <div id="convo-messages" class="flex-1 overflow-y-auto px-4 py-6 pb-40 max-w-2xl mx-auto w-full space-y-3"></div>
-
-  <!-- Policy recheck indicator -->
-  <div id="recheck-indicator" class="hidden text-center py-1">
-    <span class="text-xs text-blue-400 font-medium animate-pulse">Rechecking policy…</span>
-  </div>
-
-  <!-- Submit bar (hidden until resolved) -->
-  <div id="convo-submit-bar" class="hidden fixed bottom-20 left-0 right-0 flex justify-center px-4 z-10 pb-1">
-    <button id="convo-submit-btn"
-      class="bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-2.5 rounded-xl shadow-lg transition text-sm">
-      Submit Request →
-    </button>
-  </div>
-
-  <!-- Input bar -->
-  <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 z-10">
-    <div class="max-w-2xl mx-auto flex items-end gap-3">
-      <textarea
-        id="convo-input"
-        class="flex-1 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
-        placeholder="Reply…"
-        rows="1"
-      ></textarea>
-      <button id="convo-send-btn"
-        class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
-        title="Send">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-        </svg>
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════
-     SPLIT-SCREEN PHASE  (output panel + chat, hidden by default)
-══════════════════════════════════════════════════════════════ -->
-<div id="split-phase" class="hidden h-screen flex flex-col bg-gray-50">
-
-  <!-- Top bar -->
-  <div class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
+  <!-- Top bar (hidden initially, shown after first submit) -->
+  <div id="top-bar" class="hidden sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
     <div class="flex items-center gap-2">
       <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
       <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
     </div>
     <div class="flex items-center gap-3">
-      <span id="split-status-pill" class="text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">Results ready</span>
-      <button id="btn-new-request-split"
-        class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition">
+      <button id="dashboard-toggle-btn"
+        class="hidden text-xs font-semibold border px-3 py-1.5 rounded-lg transition text-blue-700 border-blue-200 hover:border-blue-400 hover:text-blue-900"
+        onclick="toggleDashboard()">
+        Show Dashboard
+      </button>
+      <button id="btn-new-request"
+        class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition"
+        onclick="resetToInitial()">
         ← New Request
       </button>
     </div>
   </div>
 
-  <!-- Split content -->
-  <div class="flex flex-1 overflow-hidden split-responsive">
+  <!-- Main content area -->
+  <div id="main-content" class="flex flex-1 overflow-hidden">
 
-    <!-- Left: Output panel -->
-    <div id="output-panel" class="split-output w-1/2 overflow-y-auto border-r border-gray-200 p-6 space-y-6"></div>
+    <!-- Dashboard panel (hidden initially, slides in on toggle) -->
+    <div id="dashboard-panel" class="dashboard-hidden p-6 space-y-6 bg-gray-50"></div>
 
-    <!-- Right: Chat panel -->
-    <div class="split-chat w-1/2 flex flex-col">
-      <div id="split-convo-messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-3"></div>
+    <!-- Chat area -->
+    <div id="chat-area" class="flex-1 flex flex-col min-w-0">
+
+      <!-- Hero content (visible on initial load, fades out on submit) -->
+      <div id="hero-content" class="flex-1 flex flex-col items-center justify-center px-4 pb-16 transition-all duration-400">
+        <!-- Brand -->
+        <div class="flex items-center gap-2 mb-10 select-none">
+          <div class="w-9 h-9 bg-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow">CQ</div>
+          <span class="text-gray-500 font-medium text-base tracking-tight">ChainIQ · Sourcing Intelligence</span>
+        </div>
+
+        <!-- Headline -->
+        <h1 class="text-3xl font-bold text-gray-900 text-center mb-2 leading-tight max-w-xl">
+          Describe your procurement need
+        </h1>
+        <p class="text-gray-500 text-center mb-8 max-w-md leading-relaxed">
+          Tell us what you need to purchase — our AI will analyse suppliers, policies, and pricing.
+        </p>
+      </div>
+
+      <!-- Messages container (hidden until first message) -->
+      <div id="messages" class="hidden flex-1 overflow-y-auto px-4 py-6 pb-4 max-w-2xl mx-auto w-full space-y-3"></div>
 
       <!-- Policy recheck indicator -->
-      <div id="split-recheck-indicator" class="hidden text-center py-1 shrink-0">
+      <div id="recheck-indicator" class="hidden text-center py-1 shrink-0">
         <span class="text-xs text-blue-400 font-medium animate-pulse">Rechecking policy…</span>
       </div>
 
-      <!-- Input bar -->
-      <div class="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
-        <div class="flex items-end gap-3">
+      <!-- Input bar (always present) -->
+      <div id="chat-input-bar" class="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
+        <div class="max-w-2xl mx-auto flex items-end gap-3">
           <textarea
-            id="split-convo-input"
+            id="chat-input"
             class="flex-1 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
-            placeholder="Ask about the results…"
-            rows="1"
+            placeholder="e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k"
+            rows="2"
           ></textarea>
-          <button id="split-convo-send-btn"
+          <button id="chat-send-btn"
             class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
             title="Send">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -301,13 +221,15 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════
-     LOADING OVERLAY  (shown between phases)
-══════════════════════════════════════════════════════════════ -->
-<div id="loading-overlay" class="hidden fixed inset-0 bg-gray-50 flex flex-col items-center justify-center gap-4 z-10">
-  <div class="dot-flashing"><span></span><span></span><span></span></div>
-  <p id="loading-status" class="text-gray-400 text-sm">Analysing your request…</p>
-</div>
+<!-- Hidden optional fields (values kept for metadata compatibility) -->
+<input id="input-business-unit" type="hidden" />
+<input id="input-country" type="hidden" />
+<select id="input-currency" class="hidden">
+  <option value="EUR">EUR</option>
+  <option value="CHF">CHF</option>
+  <option value="USD">USD</option>
+  <option value="GBP">GBP</option>
+</select>
 
 <!-- ══════════════════════════════════════════════════════════════
      FORWARD PHASE  (success screen after forwarding to supplier)
@@ -320,23 +242,19 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
-     RESULT PHASE  (hidden until processing complete)
+     RESULT PHASE  (legacy, hidden — unused in current flow)
 ══════════════════════════════════════════════════════════════ -->
 <div id="result-phase" class="hidden">
-
-  <!-- Sticky top bar -->
   <div class="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2">
       <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
       <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
     </div>
-    <button id="btn-new-request"
+    <button id="btn-new-request-legacy" onclick="resetToInitial()"
       class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition">
       ← New Request
     </button>
   </div>
-
-  <!-- Content -->
   <main class="max-w-7xl mx-auto px-4 py-10">
     <div class="lg:grid lg:grid-cols-[140px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[150px_minmax(0,1fr)]">
       <aside class="hidden lg:block">
@@ -345,22 +263,18 @@
           <nav id="analysis-index-links" class="mt-2 flex flex-col gap-1.5 pl-1"></nav>
         </div>
       </aside>
-
       <div class="space-y-10">
-        <!-- AI Explanation -->
         <section>
           <div class="flex items-end justify-between gap-4 mb-4">
             <div>
               <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest">AI Analysis</h2>
-              <p class="mt-1 text-sm text-gray-500 leading-relaxed">Primary reasoning output in plain language, with the commercial and policy logic explained for a human reader.</p>
+              <p class="mt-1 text-sm text-gray-500 leading-relaxed">Primary reasoning output in plain language.</p>
             </div>
           </div>
           <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
             <div id="explanation-container" class="prose max-w-none text-gray-700 text-[15px] leading-relaxed space-y-2"></div>
           </div>
         </section>
-
-        <!-- Status banner -->
         <div id="status-banner" class="hidden rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
           <span id="status-icon" class="text-2xl"></span>
           <div>
@@ -368,8 +282,6 @@
             <div id="status-reason" class="text-sm opacity-80 mt-0.5"></div>
           </div>
         </div>
-
-        <!-- Request details (collapsible) -->
         <section id="request-section" class="hidden">
           <button id="btn-toggle-request" class="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
             <span>Request Details</span>
@@ -377,8 +289,6 @@
           </button>
           <dl id="request-fields" class="hidden bg-white rounded-xl border border-gray-200 shadow-sm p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"></dl>
         </section>
-
-        <!-- Assumptions & Inferences (collapsible, hidden until populated) -->
         <section id="assumptions-section" class="hidden">
           <button id="btn-toggle-assumptions" class="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
             <span>Assumptions &amp; Inferences</span>
@@ -436,6 +346,8 @@
   let isRefinementAfterOutput = false;
   let isResultsChat = false;
   let currentSupplierShortlist = [];
+  let isDashboardVisible = false;
+  let dashboardReady = false;
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -487,6 +399,12 @@
     return meta;
   }
 
+  // ── Unified helpers (single container) ────────────────────────────────────
+  function getActiveMessageContainer() { return $('messages'); }
+  function getActiveInput() { return $('chat-input'); }
+  function getActiveSendBtn() { return $('chat-send-btn'); }
+  function getActiveRecheckIndicator() { return $('recheck-indicator'); }
+
   // ── Dev modal ─────────────────────────────────────────────────────────────
   function showDevModal(type) {
     const titles = { parsed: 'Parsed Request JSON', output: 'Output JSON', provenance: 'Field Provenance & Inference Notes' };
@@ -504,7 +422,6 @@
   document.addEventListener('click', e => {
     const toggle = e.target.closest('[data-ranking-toggle]');
     if (!toggle) return;
-    // Look in closest section-like container (data-analysis-section or generic parent)
     const parent = toggle.closest('[data-analysis-section]') || toggle.closest('section') || toggle.parentElement?.parentElement;
     const panel = parent?.querySelector('[data-ranking-panel]');
     if (!panel) return;
@@ -519,67 +436,6 @@
     setActiveAnalysisIndex(jump.dataset.analysisJump);
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-
-  // ── Phase transitions ─────────────────────────────────────────────────────
-  function showLoading(msg) {
-    $('loading-status').textContent = msg || 'Analysing your request…';
-    $('loading-overlay').classList.remove('hidden');
-  }
-  function updateLoadingStatus(msg) {
-    $('loading-status').textContent = msg;
-  }
-  function hideLoading() {
-    $('loading-overlay').classList.add('hidden');
-  }
-
-  async function transitionToResults() {
-    $('result-phase').classList.remove('hidden');
-    $('result-phase').classList.add('fade-in');
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }
-
-  async function transitionToChat() {
-    $('result-phase').classList.add('hidden');
-    $('result-phase').classList.remove('fade-in');
-
-    // Reset forward phase
-    $('forward-phase').classList.add('hidden');
-    $('forward-supplier-name').textContent = '';
-    const fwdBtn = document.getElementById('forward-action-btn');
-    if (fwdBtn) fwdBtn.closest('.flex').remove();
-
-    // Reset split phase
-    $('split-phase').classList.add('hidden');
-    $('output-panel').innerHTML = '';
-    $('split-convo-messages').innerHTML = '';
-
-    // Reset convo phase
-    $('convo-phase').classList.add('hidden');
-    $('convo-phase').classList.remove('fade-in');
-    $('convo-messages').innerHTML = '';
-    $('convo-submit-bar').classList.add('hidden');
-    $('convo-submit-btn').textContent = 'Submit Request →';
-    currentRequestJson = null;
-    currentIssues = [];
-    conversationMessages = [];
-    conversationResolved = false;
-    originalRequestText = '';
-    currentFieldProvenance = null;
-    isRefinementAfterOutput = false;
-    isResultsChat = false;
-    currentSupplierShortlist = [];
-
-    const chatPhase = $('chat-phase');
-    chatPhase.style.display = '';
-    chatPhase.style.opacity = '0';
-    chatPhase.style.transform = 'translateY(-20px)';
-    chatPhase.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
-    requestAnimationFrame(() => {
-      chatPhase.style.opacity = '1';
-      chatPhase.style.transform = 'translateY(0)';
-    });
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }
 
   // ── Conversation helpers ───────────────────────────────────────────────────
   function formatBubbleText(text) {
@@ -616,7 +472,6 @@
   }
 
   function hideTypingIndicator() {
-    // Remove all typing indicators (guards against duplicates from container moves)
     document.querySelectorAll('#typing-wrapper').forEach(el => el.remove());
   }
 
@@ -639,25 +494,22 @@
     return msg;
   }
 
-  function enterConvoMode(requestJson, issues, openingMessage) {
-    currentRequestJson = requestJson;
-    currentIssues = issues;
-    conversationResolved = false;
+  // ── Transition: show chat mode (hero fades, messages appear) ──────────────
+  function activateChatMode() {
+    // Fade out hero
+    const hero = $('hero-content');
+    hero.classList.add('hero-fade-out');
 
-    conversationMessages = [
-      { role: 'user', content: originalRequestText },
-      { role: 'assistant', content: openingMessage },
-    ];
-
-    const phase = $('convo-phase');
-    phase.classList.remove('hidden');
-    phase.classList.add('fade-in');
-    appendMessage('user', originalRequestText);
-    appendMessage('assistant', openingMessage);
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    setTimeout(() => $('convo-input').focus(), 100);
+    // Show top bar and messages after hero fades
+    setTimeout(() => {
+      hero.classList.add('hidden');
+      $('top-bar').classList.remove('hidden');
+      $('messages').classList.remove('hidden');
+      $('chat-input').placeholder = 'Reply…';
+    }, 400);
   }
 
+  // ── Handle conversation send (validation chat + results chat) ─────────────
   async function handleConvoSend() {
     const input = getActiveInput();
     const text = input.value.trim();
@@ -669,21 +521,6 @@
 
     input.value = '';
     input.style.height = 'auto';
-
-    // Keyword auto-submit when already resolved (only in pre-results chat)
-    if (conversationResolved && !isResultsChat) {
-      const lower = text.toLowerCase();
-      const submitKeywords = ['yes', 'submit', 'go ahead', 'proceed', 'ok', 'okay', 'sure', 'yep', 'yeah', 're-submit', 'resubmit'];
-      if (submitKeywords.some(k => lower.includes(k))) {
-        appendMessage('user', text);
-        if (isRefinementAfterOutput) {
-          await resubmitAfterRefinement();
-        } else {
-          await proceedToProcess(currentRequestJson, originalRequestText);
-        }
-        return;
-      }
-    }
 
     appendMessage('user', text);
     conversationMessages.push({ role: 'user', content: text });
@@ -826,11 +663,19 @@
       }
       devData.parsed = currentRequestJson;
 
-      appendMessage('assistant', data.reply);
-      conversationMessages.push({ role: 'assistant', content: data.reply });
+      if (data.reply) {
+        appendMessage('assistant', data.reply);
+        conversationMessages.push({ role: 'assistant', content: data.reply });
+      }
 
+      // Auto-proceed when resolved — no submit button needed
       if (data.resolved) {
-        $('convo-submit-bar').classList.remove('hidden');
+        await sleep(600);
+        appendMessage('assistant', 'We have everything we need. Processing your request...');
+        conversationMessages.push({ role: 'assistant', content: 'We have everything we need. Processing your request...' });
+        showTypingIndicator();
+        await proceedToProcess(currentRequestJson, originalRequestText);
+        return;
       }
 
       // Post-chat policy recheck (refinement mode only)
@@ -852,10 +697,11 @@
             if (freshEscs.length === 0) {
               currentIssues = [];
               conversationResolved = true;
-              const msg = 'Policy check complete: all escalations have been resolved. The request is ready to re-submit.';
+              const msg = 'Policy check complete: all escalations have been resolved. Processing updated results...';
               appendMessage('assistant', msg);
               conversationMessages.push({ role: 'assistant', content: msg });
-              $('convo-submit-bar').classList.remove('hidden');
+              await proceedToProcess(currentRequestJson, originalRequestText);
+              return;
             } else {
               currentIssues = freshEscs.map(e => ({
                 issue_id: e.escalation_id,
@@ -868,10 +714,11 @@
               if (!stillBlocking) {
                 conversationResolved = true;
                 const nonBlockingCount = freshEscs.length;
-                const msg = `All blocking issues resolved. ${nonBlockingCount} non-blocking notice${nonBlockingCount === 1 ? '' : 's'} remain. The request can be re-submitted.`;
+                const msg = `All blocking issues resolved. ${nonBlockingCount} non-blocking notice${nonBlockingCount === 1 ? '' : 's'} remain. Processing updated results...`;
                 appendMessage('assistant', msg);
                 conversationMessages.push({ role: 'assistant', content: msg });
-                $('convo-submit-bar').classList.remove('hidden');
+                await proceedToProcess(currentRequestJson, originalRequestText);
+                return;
               }
             }
           }
@@ -889,19 +736,10 @@
   }
 
   async function proceedToProcess(requestJson, requestText) {
-    // Ensure convo-phase is visible for message display during loading
-    const convoPhase = $('convo-phase');
-    const splitVisible = !$('split-phase').classList.contains('hidden');
-    if (!splitVisible && convoPhase.classList.contains('hidden')) {
-      convoPhase.classList.remove('hidden');
-      convoPhase.classList.add('fade-in');
-      conversationMessages = [{ role: 'user', content: originalRequestText }];
-      $('convo-messages').innerHTML = '';
-      appendMessage('user', originalRequestText);
+    // Typing indicator should already be showing (or show it)
+    if (!document.getElementById('typing-wrapper')) {
+      showTypingIndicator();
     }
-
-    $('convo-submit-bar').classList.add('hidden');
-    showTypingIndicator();
 
     try {
       // 1. Run engine
@@ -920,11 +758,12 @@
       currentRequestJson = returnedReq || requestJson;
       devData.parsed = currentRequestJson;
 
-      // 2. Activate split screen with output panel
-      activateSplitScreen(output_json, currentRequestJson);
+      // 2. Populate dashboard (hidden) and mark ready
+      refreshOutputPanel(output_json, currentRequestJson);
+      dashboardReady = true;
+      $('dashboard-toggle-btn').classList.remove('hidden');
 
       // 3. Get results presentation from LLM
-      showTypingIndicator();
       const chatRes = await fetch('/results-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -956,10 +795,12 @@
         conversationMessages.push({ role: 'assistant', content: data.messages[i] });
       }
 
+      // 5. Show "Open Dashboard" button in chat
+      showOpenDashboardButton();
       renderSuggestionChips(output_json);
       checkAndShowForwardButton(output_json);
 
-      // 5. Enter results chat mode
+      // 6. Enter results chat mode
       isResultsChat = true;
       isRefinementAfterOutput = false;
       conversationResolved = false;
@@ -972,9 +813,50 @@
     }
   }
 
+  // ── Dashboard toggle ───────────────────────────────────────────────────────
+  function showOpenDashboardButton() {
+    // Don't add if already present
+    if (document.getElementById('open-dashboard-btn')) return;
+
+    const container = getActiveMessageContainer();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex justify-start my-3 para-animate';
+    wrapper.innerHTML = `
+      <button id="open-dashboard-btn"
+        onclick="toggleDashboard(true)"
+        class="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition shadow-sm text-sm flex items-center gap-2">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Open Dashboard
+      </button>`;
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function toggleDashboard(forceShow) {
+    const panel = $('dashboard-panel');
+    const btn = $('dashboard-toggle-btn');
+
+    if (forceShow === true) {
+      isDashboardVisible = true;
+    } else if (forceShow === false) {
+      isDashboardVisible = false;
+    } else {
+      isDashboardVisible = !isDashboardVisible;
+    }
+
+    if (isDashboardVisible) {
+      panel.classList.remove('dashboard-hidden');
+      panel.classList.add('dashboard-visible');
+      btn.textContent = 'Hide Dashboard';
+    } else {
+      panel.classList.remove('dashboard-visible');
+      panel.classList.add('dashboard-hidden');
+      btn.textContent = 'Show Dashboard';
+    }
+  }
+
   // ── Suggestion chips ──────────────────────────────────────────────────────
   function renderSuggestionChips(out) {
-    // Remove any existing chips first
     const existing = document.getElementById('suggestion-chips');
     if (existing) existing.remove();
 
@@ -993,7 +875,7 @@
     container.className = 'flex flex-wrap gap-2 px-4 py-2';
     chips.forEach(text => {
       const btn = document.createElement('button');
-      btn.className = 'chip px-3 py-1 text-sm rounded-full border border-blue-400 text-blue-300 hover:bg-blue-900/40 transition';
+      btn.className = 'chip px-3 py-1 text-sm rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 transition';
       btn.textContent = text;
       btn.addEventListener('click', () => {
         const chips = document.getElementById('suggestion-chips');
@@ -1130,7 +1012,6 @@
         current = { title: line.slice(3).trim(), content: '' };
         return;
       }
-
       if (!current) return;
       current.content += `${current.content ? '\n' : ''}${line}`;
     });
@@ -1365,16 +1246,6 @@
     const escalations = out.escalations || [];
     if (escalations.length === 0) return '';
 
-    const hasBlocking = escalations.some(e => e.blocking);
-    const resolveBtn = `<div class="mt-4 flex justify-end">
-      <button
-        type="button"
-        onclick="enterEscalationResolutionMode()"
-        class="rounded-xl border ${hasBlocking ? 'border-red-300 bg-red-600 hover:bg-red-700 text-white' : 'border-amber-300 bg-amber-500 hover:bg-amber-600 text-white'} px-5 py-2.5 text-sm font-semibold shadow transition">
-        ${hasBlocking ? 'Resolve Escalations →' : 'Acknowledge & Refine →'}
-      </button>
-    </div>`;
-
     return `<div class="mt-5 grid gap-3">
       ${escalations.map(e => `<div class="rounded-2xl border p-4 ${e.blocking ? 'border-red-200 bg-red-50/70' : 'border-yellow-200 bg-yellow-50/70'}">
         <div class="flex flex-wrap items-center gap-2">
@@ -1388,7 +1259,6 @@
           <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Rule: ${escapeHtml(e.rule || '—')}</span>
         </div>
       </div>`).join('')}
-      ${resolveBtn}
     </div>`;
   }
 
@@ -1419,23 +1289,6 @@
     </section>`;
   }
 
-  // ── Split-screen helpers ─────────────────────────────────────────────────
-  function getActiveMessageContainer() {
-    return $('split-phase').classList.contains('hidden') ? $('convo-messages') : $('split-convo-messages');
-  }
-
-  function getActiveInput() {
-    return $('split-phase').classList.contains('hidden') ? $('convo-input') : $('split-convo-input');
-  }
-
-  function getActiveSendBtn() {
-    return $('split-phase').classList.contains('hidden') ? $('convo-send-btn') : $('split-convo-send-btn');
-  }
-
-  function getActiveRecheckIndicator() {
-    return $('split-phase').classList.contains('hidden') ? $('recheck-indicator') : $('split-recheck-indicator');
-  }
-
   // ── Forward button / success screen ──────────────────────────────────────
   function checkAndShowForwardButton(outputJson) {
     if (document.getElementById('forward-action-btn')) return;
@@ -1463,21 +1316,71 @@
   }
 
   function showForwardScreen(supplierName) {
-    $('split-phase').classList.add('hidden');
     $('forward-phase').classList.remove('hidden');
     if (supplierName) {
       $('forward-supplier-name').textContent = `Forwarded to: ${supplierName}`;
     }
   }
 
-  function resetToInitial() {
-    $('forward-phase').classList.add('hidden');
-    $('forward-supplier-name').textContent = '';
-    const btn = document.getElementById('forward-action-btn');
-    if (btn) btn.closest('.flex').remove();
-    transitionToChat();
-    $('request-input').value = '';
-    $('request-input').focus();
+  // ── Dashboard panel rendering ─────────────────────────────────────────────
+  function refreshOutputPanel(out, req) {
+    const panel = $('dashboard-panel');
+    if (!panel) return;
+
+    let html = '';
+
+    // 1. Status indicator
+    html += buildStatusBannerHtml(out.recommendation || {});
+
+    // 2. Escalations (blocking first, then info)
+    const escs = out.escalations || [];
+    const sortedEscs = [...escs].sort((a, b) => (b.blocking ? 1 : 0) - (a.blocking ? 1 : 0));
+    html += renderEscalationsPanelHtml(sortedEscs);
+
+    // 3. Mandated supplier constraint (skip if conflict — escalation card covers it)
+    const mandated = out.policy_evaluation?.mandated_supplier;
+    const isConflict = mandated && mandated.must_use && mandated.status !== 'satisfied';
+    if (!isConflict) {
+      const mandatedHtml = renderMandatedSupplierVisual(out);
+      if (mandatedHtml) {
+        html += `<section>
+          <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Constraint</div>
+          ${mandatedHtml}
+        </section>`;
+      }
+    }
+
+    // 4. Top recommendation + ranking table
+    html += `<section>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Comparison</div>
+      ${renderTopRecommendationVisual(out)}
+    </section>`;
+
+    // 5. Alternatives
+    const altHtml = renderAlternativesVisual(out);
+    if (altHtml) {
+      html += `<section>
+        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Alternatives</div>
+        ${altHtml}
+      </section>`;
+    }
+
+    // 6. Excluded suppliers (collapsed by default)
+    const exclHtml = renderExcludedVisual(out);
+    if (exclHtml) {
+      const exclCount = (out.suppliers_excluded || []).length;
+      html += `<section>
+        <details>
+          <summary class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 cursor-pointer select-none flex items-center gap-1.5 list-none">
+            <svg class="w-3.5 h-3.5 transition-transform duration-200 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            Excluded Suppliers${exclCount ? ` (${exclCount})` : ''}
+          </summary>
+          ${exclHtml}
+        </details>
+      </section>`;
+    }
+
+    panel.innerHTML = html;
   }
 
   function buildStatusBannerHtml(rec) {
@@ -1556,90 +1459,7 @@
     </section>`;
   }
 
-  function refreshOutputPanel(out, req) {
-    const panel = $('output-panel');
-    if (!panel) return;
-
-    let html = '';
-
-    // 1. Status indicator
-    html += buildStatusBannerHtml(out.recommendation || {});
-
-    // 2. Escalations (blocking first, then info)
-    const escs = out.escalations || [];
-    const sortedEscs = [...escs].sort((a, b) => (b.blocking ? 1 : 0) - (a.blocking ? 1 : 0));
-    html += renderEscalationsPanelHtml(sortedEscs);
-
-    // 3. Mandated supplier constraint (skip if conflict — escalation card covers it)
-    const mandated = out.policy_evaluation?.mandated_supplier;
-    const isConflict = mandated && mandated.must_use && mandated.status !== 'satisfied';
-    if (!isConflict) {
-      const mandatedHtml = renderMandatedSupplierVisual(out);
-      if (mandatedHtml) {
-        html += `<section>
-          <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Constraint</div>
-          ${mandatedHtml}
-        </section>`;
-      }
-    }
-
-    // 4. Top recommendation + ranking table
-    html += `<section>
-      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Comparison</div>
-      ${renderTopRecommendationVisual(out)}
-    </section>`;
-
-    // 5. Alternatives
-    const altHtml = renderAlternativesVisual(out);
-    if (altHtml) {
-      html += `<section>
-        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Alternatives</div>
-        ${altHtml}
-      </section>`;
-    }
-
-    // 6. Excluded suppliers (collapsed by default)
-    const exclHtml = renderExcludedVisual(out);
-    if (exclHtml) {
-      const exclCount = (out.suppliers_excluded || []).length;
-      html += `<section>
-        <details>
-          <summary class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 cursor-pointer select-none flex items-center gap-1.5 list-none">
-            <svg class="w-3.5 h-3.5 transition-transform duration-200 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-            Excluded Suppliers${exclCount ? ` (${exclCount})` : ''}
-          </summary>
-          ${exclHtml}
-        </details>
-      </section>`;
-    }
-
-    panel.innerHTML = html;
-  }
-
-  function activateSplitScreen(out, req) {
-    // Hide other phases
-    $('chat-phase').style.display = 'none';
-    $('convo-phase').classList.add('hidden');
-    $('result-phase').classList.add('hidden');
-
-    // Render output panel
-    refreshOutputPanel(out, req);
-
-    // Move existing messages to split panel (excluding typing indicators)
-    const splitMessages = $('split-convo-messages');
-    const convoMessages = $('convo-messages');
-    // Remove any typing indicators before copying
-    const typingEl = convoMessages.querySelector('#typing-wrapper');
-    if (typingEl) typingEl.remove();
-    splitMessages.innerHTML = convoMessages.innerHTML;
-    convoMessages.innerHTML = '';
-
-    // Show split phase
-    $('split-phase').classList.remove('hidden');
-    splitMessages.scrollTop = splitMessages.scrollHeight;
-  }
-
-  // ── Explanation with staggered animation ─────────────────────────────────
+  // ── Explanation with staggered animation (legacy) ─────────────────────────
   async function renderExplanationAnimated(explanation) {
     const container = $('explanation-container');
     container.innerHTML = '';
@@ -1660,24 +1480,33 @@
     setupAnalysisSectionObserver();
   }
 
-  // ── Reset all result sections ─────────────────────────────────────────────
+  // ── Reset all result sections (legacy) ────────────────────────────────────
   function resetResults() {
     if (analysisObserver) {
       analysisObserver.disconnect();
       analysisObserver = null;
     }
-    $('explanation-container').innerHTML = '';
-    $('analysis-index-links').innerHTML = '';
-    $('status-banner').classList.add('hidden');
-    $('request-section').classList.add('hidden');
-    $('request-fields').classList.add('hidden');
-    $('request-toggle-icon').textContent = '▶';
-    $('assumptions-section').classList.add('hidden');
-    $('assumptions-body').classList.add('hidden');
-    $('assumptions-toggle-icon').textContent = '▶';
+    const ec = $('explanation-container');
+    if (ec) ec.innerHTML = '';
+    const ail = $('analysis-index-links');
+    if (ail) ail.innerHTML = '';
+    const sb = $('status-banner');
+    if (sb) sb.classList.add('hidden');
+    const rs = $('request-section');
+    if (rs) rs.classList.add('hidden');
+    const rf = $('request-fields');
+    if (rf) rf.classList.add('hidden');
+    const rti = $('request-toggle-icon');
+    if (rti) rti.textContent = '▶';
+    const as = $('assumptions-section');
+    if (as) as.classList.add('hidden');
+    const ab = $('assumptions-body');
+    if (ab) ab.classList.add('hidden');
+    const ati = $('assumptions-toggle-icon');
+    if (ati) ati.textContent = '▶';
   }
 
-  // ── Render all from output JSON ───────────────────────────────────────────
+  // ── Render all from output JSON (legacy) ──────────────────────────────────
   function renderDataSections(out, req) {
     renderStatusBanner(out.recommendation || {});
     renderRequestDetails(req || {}, out);
@@ -1686,7 +1515,7 @@
     loadedRequestText = (req && req.request_text) || null;
   }
 
-  // ── Escalation resolution mode ────────────────────────────────────────────
+  // ── Escalation resolution helpers ─────────────────────────────────────────
   function getEscalationOptions(esc) {
     const rule = (esc.rule || '');
     const trigger = (esc.trigger || '').toLowerCase();
@@ -1777,70 +1606,49 @@
       action_required: e.rule,
     }));
 
-    // Capture supplier shortlist for ER-002 context
     currentSupplierShortlist = out.supplier_shortlist || [];
-
-    // Use the request_json from the last processed output
     const outputRequestJson = devData.parsed || {};
     currentRequestJson = { ...outputRequestJson };
     currentIssues = escalationIssues;
     isRefinementAfterOutput = true;
     conversationResolved = false;
 
-    // Build opening message
     const openingMessage = buildEscalationOpeningMessage(escalations);
-
-    // Keep existing conversation messages and append the new escalation summary
     conversationMessages.push({ role: 'assistant', content: openingMessage });
 
-    // Update submit button label
-    $('convo-submit-btn').textContent = 'Re-submit Request →';
+    // Append escalation message to the single messages container
+    appendMessage('assistant', openingMessage);
 
-    // Update convo phase header pill
-    const pill = document.querySelector('#convo-phase .bg-amber-50');
-    if (pill) pill.textContent = 'Resolving escalations…';
-
-    // Hide result, show convo phase
-    $('result-phase').classList.add('hidden');
-    $('convo-submit-bar').classList.add('hidden');
-
-    const phase = $('convo-phase');
-    phase.classList.remove('hidden');
-    phase.classList.add('fade-in');
-
-    // Re-render all messages (including prior conversation if any)
-    const container = getActiveMessageContainer();
-    container.innerHTML = '';
-    for (const msg of conversationMessages) {
-      appendMessage(msg.role, msg.content);
-    }
-
-    window.scrollTo({ top: 0, behavior: 'instant' });
     setTimeout(() => getActiveInput().focus(), 100);
   }
 
   // ── Main submit flow ──────────────────────────────────────────────────────
   async function handleSubmit() {
-    const text = $('request-input').value.trim();
+    const text = $('chat-input').value.trim();
     if (!text) {
-      $('request-input').focus();
+      $('chat-input').focus();
       return;
     }
 
     originalRequestText = text;
+    $('chat-input').value = '';
+    $('chat-input').style.height = 'auto';
 
-    // 1. Animate chat bar out
-    const chatPhase = $('chat-phase');
-    chatPhase.classList.add('fade-out-down');
-    await sleep(400);
-    chatPhase.style.display = 'none';
-    chatPhase.classList.remove('fade-out-down');
+    // 1. Transition to chat mode (fade hero, show messages)
+    activateChatMode();
+
+    // Wait for hero fade before appending messages
+    await sleep(420);
 
     resetResults();
-    showLoading('Parsing your request…');
+
+    // 2. Show user message and typing indicator
+    appendMessage('user', text);
+    conversationMessages = [{ role: 'user', content: text }];
+    showTypingIndicator();
 
     try {
-      // 2. /parse
+      // 3. /parse
       const parseRes = await fetch('/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1855,8 +1663,7 @@
       devData.provenance = { field_provenance, inference_notes };
       currentFieldProvenance = field_provenance || null;
 
-      // 3. /validate
-      updateLoadingStatus('Checking your request…');
+      // 4. /validate
       const validateRes = await fetch('/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1868,33 +1675,39 @@
       }
       const { valid, issues } = await validateRes.json();
 
-      hideLoading();
-
       if (valid) {
-        // Happy path — skip chat, go straight to processing
+        // Happy path — go straight to processing (typing indicator already showing)
+        currentRequestJson = request_json;
         await proceedToProcess(request_json, text);
       } else {
-        // Enter conversation mode to resolve issues
-        enterConvoMode(request_json, issues, buildOpeningMessage(issues));
+        // Show clarification in chat (no phase switch)
+        hideTypingIndicator();
+        currentRequestJson = request_json;
+        currentIssues = issues;
+        conversationResolved = false;
+
+        const openingMessage = buildOpeningMessage(issues);
+        appendMessage('assistant', openingMessage);
+        conversationMessages.push({ role: 'assistant', content: openingMessage });
+        setTimeout(() => getActiveInput().focus(), 100);
       }
 
     } catch (e) {
-      hideLoading();
-      chatPhase.style.display = '';
-      alert('Error: ' + e.message);
+      hideTypingIndicator();
+      appendMessage('assistant', 'Error: ' + e.message);
     }
   }
 
   // ── Load example ─────────────────────────────────────────────────────────
   async function loadExample() {
-    const chatPhase = $('chat-phase');
-    chatPhase.classList.add('fade-out-down');
-    await sleep(400);
-    chatPhase.style.display = 'none';
-    chatPhase.classList.remove('fade-out-down');
+    $('chat-input').value = '';
+    activateChatMode();
+    await sleep(420);
 
     resetResults();
-    showLoading('Loading example…');
+    appendMessage('user', 'Load example request');
+    conversationMessages = [{ role: 'user', content: 'Load example request' }];
+    showTypingIndicator();
 
     try {
       const r = await fetch('/example');
@@ -1908,19 +1721,12 @@
       currentRequestJson = data.request_json;
       originalRequestText = 'Example request';
 
-      hideLoading();
+      // Populate dashboard
+      refreshOutputPanel(data.output_json, data.request_json);
+      dashboardReady = true;
+      $('dashboard-toggle-btn').classList.remove('hidden');
 
-      // Set up convo-phase temporarily for message rendering before split
-      conversationMessages = [{ role: 'user', content: 'Load example request' }];
-      const convoPhase = $('convo-phase');
-      convoPhase.classList.remove('hidden');
-      $('convo-messages').innerHTML = '';
-      appendMessage('user', 'Load example request');
-
-      // Activate split screen with example output
-      activateSplitScreen(data.output_json, data.request_json);
-      showTypingIndicator();
-
+      // Get results presentation
       const chatRes = await fetch('/results-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1946,6 +1752,7 @@
           appendMessage('assistant', chatData.messages[i]);
           conversationMessages.push({ role: 'assistant', content: chatData.messages[i] });
         }
+        showOpenDashboardButton();
         renderSuggestionChips(data.output_json);
         checkAndShowForwardButton(data.output_json);
       } else {
@@ -1956,111 +1763,125 @@
       setTimeout(() => getActiveInput().focus(), 100);
 
     } catch (e) {
-      hideLoading();
-      chatPhase.style.display = '';
-      alert('Failed to load example: ' + e.message);
+      hideTypingIndicator();
+      appendMessage('assistant', 'Failed to load example: ' + e.message);
     }
   }
 
-  // ── Conversation input wiring ─────────────────────────────────────────────
-  $('convo-send-btn').addEventListener('click', handleConvoSend);
+  // ── Reset to initial state ────────────────────────────────────────────────
+  function resetToInitial() {
+    // Hide forward screen
+    $('forward-phase').classList.add('hidden');
+    $('forward-supplier-name').textContent = '';
+    const fwdBtn = document.getElementById('forward-action-btn');
+    if (fwdBtn) fwdBtn.closest('.flex').remove();
 
-  $('convo-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleConvoSend();
-    }
-  });
+    // Hide dashboard
+    toggleDashboard(false);
+    $('dashboard-panel').innerHTML = '';
+    dashboardReady = false;
+    $('dashboard-toggle-btn').classList.add('hidden');
 
-  $('convo-input').addEventListener('input', function () {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-  });
+    // Clear messages
+    $('messages').innerHTML = '';
+    $('messages').classList.add('hidden');
 
-  $('convo-submit-btn').addEventListener('click', () => {
-    appendMessage('user', 'submit');
-    conversationMessages.push({ role: 'user', content: 'submit' });
-    if (isRefinementAfterOutput) {
-      resubmitAfterRefinement();
-    } else {
-      proceedToProcess(currentRequestJson, originalRequestText);
-    }
-  });
+    // Hide top bar
+    $('top-bar').classList.add('hidden');
 
-  async function resubmitAfterRefinement() {
-    // Re-process and present updated results in chat (no page transition)
-    await proceedToProcess(currentRequestJson, originalRequestText);
+    // Reset legacy result phase
+    $('result-phase').classList.add('hidden');
+
+    // Reset state
+    currentRequestJson = null;
+    currentIssues = [];
+    conversationMessages = [];
+    conversationResolved = false;
+    originalRequestText = '';
+    currentFieldProvenance = null;
+    isRefinementAfterOutput = false;
+    isResultsChat = false;
+    currentSupplierShortlist = [];
+    isDashboardVisible = false;
+    loadedOutput = null;
+    devData.parsed = null;
+    devData.output = null;
+    devData.provenance = null;
+
+    // Fade hero back in
+    const hero = $('hero-content');
+    hero.classList.remove('hidden', 'hero-fade-out');
+    hero.style.opacity = '0';
+    hero.style.transform = 'translateY(-20px)';
+    requestAnimationFrame(() => {
+      hero.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+      hero.style.opacity = '1';
+      hero.style.transform = 'translateY(0)';
+    });
+
+    // Reset input
+    $('chat-input').value = '';
+    $('chat-input').placeholder = 'e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k';
+    setTimeout(() => $('chat-input').focus(), 100);
   }
 
-  // ── Split-screen input wiring ─────────────────────────────────────────────
-  $('split-convo-send-btn').addEventListener('click', handleConvoSend);
-
-  $('split-convo-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleConvoSend();
-    }
-  });
-
-  $('split-convo-input').addEventListener('input', function () {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-  });
-
-  // ── New Request ───────────────────────────────────────────────────────────
-  $('btn-new-request').addEventListener('click', async () => {
-    await transitionToChat();
-    $('request-input').value = '';
-    $('request-input').focus();
-  });
-
-  $('btn-new-request-split').addEventListener('click', async () => {
-    await transitionToChat();
-    $('request-input').value = '';
-    $('request-input').focus();
-  });
-
-  // ── Request details toggle ────────────────────────────────────────────────
-  $('btn-toggle-request').addEventListener('click', () => {
-    const dl = $('request-fields');
-    const icon = $('request-toggle-icon');
-    if (dl.classList.contains('hidden')) {
-      dl.classList.remove('hidden');
-      icon.textContent = '▼';
-    } else {
-      dl.classList.add('hidden');
-      icon.textContent = '▶';
-    }
-  });
-
-  // ── Assumptions section toggle ────────────────────────────────────────────
-  $('btn-toggle-assumptions').addEventListener('click', () => {
-    const body = $('assumptions-body');
-    const icon = $('assumptions-toggle-icon');
-    if (body.classList.contains('hidden')) {
-      body.classList.remove('hidden');
-      icon.textContent = '▼';
-    } else {
-      body.classList.add('hidden');
-      icon.textContent = '▶';
-    }
-  });
-
-  // ── Send on click / Enter ─────────────────────────────────────────────────
-  $('send-btn').addEventListener('click', handleSubmit);
-
-  $('request-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+  // ── Event listeners ───────────────────────────────────────────────────────
+  // Single send button + input
+  $('chat-send-btn').addEventListener('click', () => {
+    if (!isResultsChat && conversationMessages.length === 0) {
       handleSubmit();
+    } else {
+      handleConvoSend();
     }
   });
 
-  // Auto-grow textarea
-  $('request-input').addEventListener('input', function () {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+  $('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isResultsChat && conversationMessages.length === 0) {
+        handleSubmit();
+      } else {
+        handleConvoSend();
+      }
+    }
   });
+
+  $('chat-input').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  // Request details toggle (legacy)
+  const btnToggleReq = $('btn-toggle-request');
+  if (btnToggleReq) {
+    btnToggleReq.addEventListener('click', () => {
+      const dl = $('request-fields');
+      const icon = $('request-toggle-icon');
+      if (dl.classList.contains('hidden')) {
+        dl.classList.remove('hidden');
+        icon.textContent = '▼';
+      } else {
+        dl.classList.add('hidden');
+        icon.textContent = '▶';
+      }
+    });
+  }
+
+  // Assumptions section toggle (legacy)
+  const btnToggleAssumptions = $('btn-toggle-assumptions');
+  if (btnToggleAssumptions) {
+    btnToggleAssumptions.addEventListener('click', () => {
+      const body = $('assumptions-body');
+      const icon = $('assumptions-toggle-icon');
+      if (body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        icon.textContent = '▼';
+      } else {
+        body.classList.add('hidden');
+        icon.textContent = '▶';
+      }
+    });
+  }
 
   // btn-load-example removed from UI; loadExample() still callable programmatically
 </script>

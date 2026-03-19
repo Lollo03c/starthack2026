@@ -171,17 +171,8 @@ def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], 
         all_resolved = valid
         remaining_issues = remaining_struct_issues + pending_escalation_issues
 
-    if all_resolved:
-        reply = (
-            "Everything looks good! Would you like to add anything else, "
-            "or shall I re-submit the request now?"
-            if escalation_issues_input else
-            "Everything looks good! Would you like to add anything else, "
-            "or shall I submit the request now?"
-        )
-
     return {
-        "reply": reply,
+        "reply": reply if not all_resolved else None,
         "updated_request_json": updated_request,
         "updated_field_provenance": updated_provenance,
         "remaining_issues": remaining_issues,
