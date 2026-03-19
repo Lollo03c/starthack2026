@@ -68,10 +68,10 @@ def parse_request(request_dict: dict, data: DataContext) -> RequestContext:
     )
 
     # --- Resolve supplier names to IDs ----------------------------------------
-    ctx.preferred_supplier_id_resolved = _resolve_supplier_name(
-        ctx.preferred_supplier_mentioned, data
+    ctx.preferred_supplier_id_resolved, ctx.preferred_supplier_fuzzy_match = (
+        _resolve_supplier_name(ctx.preferred_supplier_mentioned, data)
     )
-    ctx.incumbent_supplier_id_resolved = _resolve_supplier_name(
+    ctx.incumbent_supplier_id_resolved, _ = _resolve_supplier_name(
         ctx.incumbent_supplier, data
     )
 
@@ -117,14 +117,16 @@ def _run_llm_decomposition(ctx: RequestContext) -> None:
             ctx.quantity_in_text = result.quantity_in_text
 
 
-def _resolve_supplier_name(name: str | None, data: DataContext) -> str | None:
+def _resolve_supplier_name(
+    name: str | None, data: DataContext
+) -> tuple[str | None, bool]:
     """Attempt to resolve a supplier display name to a supplier_id.
 
     Tries exact match first, then case-insensitive, then substring.
-    Returns None if not found or name is None/empty.
+    Returns (supplier_id or None, fuzzy_match: bool).
     """
     if not name:
-        return None
+        return None, False
     name_lower = name.lower().strip()
 
     # Collect all unique (supplier_id, supplier_name) pairs
@@ -136,20 +138,21 @@ def _resolve_supplier_name(name: str | None, data: DataContext) -> str | None:
     # Exact match
     for sid, sname in seen.items():
         if sname == name.strip():
-            return sid
+            return sid, False
 
     # Case-insensitive exact
     for sid, sname in seen.items():
         if sname.lower() == name_lower:
-            return sid
+            return sid, False
 
     # Substring (name contains supplier name or vice versa)
     for sid, sname in seen.items():
         if name_lower in sname.lower() or sname.lower() in name_lower:
-            return sid
+            logger.info("Fuzzy-matched supplier '%s' → %s (%s)", name, sid, sname)
+            return sid, True
 
     logger.debug("Could not resolve supplier name '%s' to a supplier_id", name)
-    return None
+    return None, False
 
 
 def _parse_date(value) -> date | None:

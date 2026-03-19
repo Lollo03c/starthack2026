@@ -159,6 +159,16 @@ class Escalation:
     escalation_id: str = ""  # assigned by output_builder
 
 
+@dataclass
+class Uncertainty:
+    uncertainty_type: str       # missing_field, degraded_analysis, assumption, ambiguity
+    source: str                 # what field/component triggered it
+    description: str            # human-readable explanation
+    assumption_made: str        # what the engine did to proceed
+    impact: str                 # how this affects the output
+    requires_approval: bool = False  # True = human must validate before proceeding (e.g. FX)
+
+
 # ---------------------------------------------------------------------------
 # Phase 0 output
 # ---------------------------------------------------------------------------
@@ -204,6 +214,7 @@ class RequestContext:
     quantity_in_text: float | None = None
     llm_detected_language: str = "en"
     llm_parse_success: bool = False
+    preferred_supplier_fuzzy_match: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -96,6 +96,15 @@ def _apply_category_rule(
     if not _threshold_met(rule_text, ctx):
         return None
 
+    # ER-007: brand_safety rules use escalation rule ER-007 instead of the category rule ID
+    if rule_type == "brand_safety":
+        return Escalation(
+            rule_id="ER-007",
+            trigger=f"Brand safety review required ({rule_id}): {rule_text}",
+            escalate_to="Marketing Governance Lead",
+            blocking=False,
+        )
+
     return Escalation(
         rule_id=rule_id,
         trigger=f"Category rule {rule_id}: {rule_text}",

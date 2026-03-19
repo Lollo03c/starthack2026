@@ -11,12 +11,14 @@ from datetime import datetime, timezone
 
 from engine import config
 from engine.data_loader import find_approval_threshold
+from engine.fx import convert as fx_convert
 from engine.types import (
     DataContext,
     Escalation,
     RequestContext,
     ScoredSupplier,
     SupplierTrace,
+    Uncertainty,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,24 +53,46 @@ def build_output(
     shortlist = scored[: config.SHORTLIST_MAX]
     not_ranked = scored[config.SHORTLIST_MAX :]
 
+    # --- Uncertainties --------------------------------------------------------
+    uncertainties = _detect_uncertainties(ctx, scored, eliminated, data)
+    formatted_uncertainties = []
+    for i, u in enumerate(uncertainties):
+        formatted_uncertainties.append({
+            "id": f"U-{i + 1:03d}",
+            "type": u.uncertainty_type,
+            "source": u.source,
+            "description": u.description,
+            "assumption_made": u.assumption_made,
+            "impact": u.impact,
+            "requires_approval": u.requires_approval,
+        })
+
+    # --- FX conversion context for interpretation and shortlist ---------------
+    fx_info = _compute_fx_info(ctx, scored)
+
     # --- Audit trail ----------------------------------------------------------
     audit_trail = _build_audit_trail(ctx, scored, eliminated, data, validation_issues, deduped_escalations)
+
+    interpretation = _build_interpretation(ctx)
+    if fx_info:
+        interpretation.update(fx_info["interpretation_extra"])
 
     return {
         "request_id": ctx.request_id,
         "processed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "request_interpretation": _build_interpretation(ctx),
+        "request_interpretation": interpretation,
         "validation": {
             "completeness": "fail" if validation_issues else "pass",
             "issues_detected": [_format_issue(v) for v in validation_issues],
         },
         "policy_evaluation": policy_eval,
-        "supplier_shortlist": [_format_scored(s, i + 1) for i, s in enumerate(shortlist)],
+        "supplier_shortlist": [_format_scored(s, i + 1, fx_info) for i, s in enumerate(shortlist)],
         "suppliers_excluded": (
             [_format_eliminated(t) for t in eliminated]
             + [_format_scored_excluded(s) for s in not_ranked]
         ),
         "escalations": [_format_escalation(e) for e in deduped_escalations],
+        "uncertainties": formatted_uncertainties,
         "recommendation": recommendation,
         "audit_trail": audit_trail,
     }
@@ -153,12 +177,13 @@ def _detect_validation_issues(
             "Requester should confirm the intended quantity.",
         ))
 
-    # 4. Budget insufficient (only if budget AND quantity are set and we have priced candidates)
-    if ctx.budget_amount is not None and ctx.quantity and scored:
-        min_total = min(s.pricing_tier.unit_price * ctx.quantity for s in scored)
+    # 4. Budget insufficient (only if budget AND quantity are set, same currency, and we have priced candidates)
+    same_currency_scored = [s for s in scored if s.pricing_tier.currency == ctx.currency]
+    if ctx.budget_amount is not None and ctx.quantity and same_currency_scored:
+        min_total = min(s.pricing_tier.unit_price * ctx.quantity for s in same_currency_scored)
         tolerance = ctx.budget_amount * (1 + config.BUDGET_TOLERANCE_FRACTION)
         if min_total > tolerance:
-            cheapest = min(scored, key=lambda s: s.pricing_tier.unit_price)
+            cheapest = min(same_currency_scored, key=lambda s: s.pricing_tier.unit_price)
             issues.append(ValidationIssue(
                 "budget_insufficient", "critical",
                 (
@@ -315,12 +340,43 @@ def _collect_escalations(
                 blocking=True,
             ))
 
-    # Add approval-threshold escalation when required quotes > 1
+    # --- A1: ER-003 (value_exceeds_threshold) — high-value contracts ----------
     if scored:
         min_total = min(s.total_price for s in scored)
         threshold = find_approval_threshold(data, min_total, ctx.currency)
+
+        # ER-003: fire when value hits the high tiers (500K+ EUR/CHF, 540K+ USD)
+        high_value_tiers = {
+            "EUR": 500_000, "CHF": 500_000, "USD": 540_000,
+        }
+        hv_floor = high_value_tiers.get(ctx.currency)
+        if hv_floor is not None and min_total >= hv_floor:
+            all_esc.append(Escalation(
+                rule_id="ER-003",
+                trigger=(
+                    f"Estimated contract value {ctx.currency} {min_total:,.2f} "
+                    f"exceeds high-value threshold ({ctx.currency} {hv_floor:,.0f}). "
+                    f"Requires Head of Strategic Sourcing review."
+                ),
+                escalate_to="Head of Strategic Sourcing",
+                blocking=True,
+            ))
+
+        # --- A5: Insufficient quotes for approval threshold -------------------
+        if threshold and threshold.quotes_required > len(scored):
+            all_esc.append(Escalation(
+                rule_id="ER-004",
+                trigger=(
+                    f"Approval threshold {threshold.rule_id} requires "
+                    f"{threshold.quotes_required} quote(s), but only "
+                    f"{len(scored)} compliant supplier(s) available."
+                ),
+                escalate_to="Head of Category",
+                blocking=True,
+            ))
+
+        # Approval-threshold escalation when required quotes > 1 and single-source conflict
         if threshold and threshold.quotes_required > 1:
-            # Check for policy conflict (single-source instruction)
             text_lower = ctx.request_text.lower() if ctx.request_text else ""
             single_source_phrases = ["no exception", "only", "exclusively", "no alternative", "sole source"]
             if any(p in text_lower for p in single_source_phrases):
@@ -335,6 +391,45 @@ def _collect_escalations(
                     escalate_to=threshold.deviation_approval or "Procurement Manager",
                     blocking=True,
                 ))
+
+    # --- A2: ER-005 (data_residency_constraint_conflict) ----------------------
+    if not scored and ctx.data_residency_constraint:
+        residency_eliminated = any(
+            t.eliminated_at == "policy_compliant"
+            and t.reason
+            and "data residency" in t.reason.lower()
+            for t in eliminated
+        )
+        if residency_eliminated:
+            # Replace the generic ER-004 with ER-005
+            all_esc = [
+                e for e in all_esc
+                if not (e.rule_id == "ER-004" and "no compliant supplier" in e.trigger.lower())
+            ]
+            all_esc.append(Escalation(
+                rule_id="ER-005",
+                trigger=(
+                    f"Data residency constraint required but no supplier in "
+                    f"{ctx.delivery_countries} supports it for "
+                    f"{ctx.category_l1}/{ctx.category_l2}. "
+                    f"Requires Security and Compliance Review."
+                ),
+                escalate_to="Security and Compliance Review",
+                blocking=True,
+            ))
+
+    # --- A4: ER-008 (supplier_not_registered_in_delivery_country) -------------
+    if ctx.currency == "USD":
+        all_esc.append(Escalation(
+            rule_id="ER-008",
+            trigger=(
+                f"USD-currency request with delivery to {ctx.delivery_countries}. "
+                f"Supplier registration and sanction screening in delivery country "
+                f"must be verified by Regional Compliance Lead."
+            ),
+            escalate_to="Regional Compliance Lead",
+            blocking=False,
+        ))
 
     return all_esc
 
@@ -566,9 +661,9 @@ def _collect_triggered_rules(
 # Supplier formatting
 # ---------------------------------------------------------------------------
 
-def _format_scored(s: ScoredSupplier, rank: int) -> dict:
+def _format_scored(s: ScoredSupplier, rank: int, fx_info: dict | None = None) -> dict:
     tier = s.pricing_tier
-    return {
+    result = {
         "rank": rank,
         "supplier_id": s.supplier_row.supplier_id,
         "supplier_name": s.supplier_row.supplier_name,
@@ -595,6 +690,19 @@ def _format_scored(s: ScoredSupplier, rank: int) -> dict:
         "fit_rationale": s.fit_rationale,
         "recommendation_note": _recommendation_note(s),
     }
+    # Add indicative FX-converted total when currencies differ
+    if fx_info and tier.currency != fx_info["request_currency"]:
+        converted, rate, source = fx_convert(
+            s.total_price, tier.currency, fx_info["request_currency"]
+        )
+        result["total_price_request_currency_indicative"] = converted
+        result["fx_rate"] = rate
+        result["fx_rate_source"] = source
+        result["fx_disclaimer"] = (
+            "Indicative only. Converted values require confirmation "
+            "before use in procurement decisions."
+        )
+    return result
 
 
 def _format_scored_excluded(s: ScoredSupplier) -> dict:
@@ -677,4 +785,162 @@ def _build_audit_trail(
             "Used for context only."
             if historical else "No historical awards found for this request."
         ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Uncertainties
+# ---------------------------------------------------------------------------
+
+def _detect_uncertainties(
+    ctx: RequestContext,
+    scored: list[ScoredSupplier],
+    eliminated: list[SupplierTrace],
+    data: DataContext,
+) -> list[Uncertainty]:
+    uncertainties: list[Uncertainty] = []
+
+    # 1. Missing required_by_date
+    if ctx.required_by_date is None:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="missing_field",
+            source="required_by_date",
+            description="Required-by date is not specified.",
+            assumption_made="No deadline constraint assumed.",
+            impact="Lead-time scoring disabled; suppliers not filtered by delivery speed.",
+        ))
+
+    # 2. Missing budget_amount
+    if ctx.budget_amount is None:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="missing_field",
+            source="budget_amount",
+            description="Budget amount is not specified.",
+            assumption_made="Approval tier based on lowest supplier price.",
+            impact="Budget sufficiency cannot be validated; approval threshold may be inaccurate.",
+        ))
+
+    # 3. Missing quantity
+    if ctx.quantity is None:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="missing_field",
+            source="quantity",
+            description="Quantity field is null.",
+            assumption_made="Quantity=1 used for pricing lookup.",
+            impact="Pricing tier may not reflect actual volume; MOQ check skipped.",
+        ))
+
+    # 4. LLM decomposition failed
+    if not ctx.llm_parse_success:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="degraded_analysis",
+            source="llm_decomposition",
+            description="LLM-based requirement decomposition did not succeed.",
+            assumption_made="Scoring based on structured fields only.",
+            impact="Free-text requirements, subjective criteria not applied.",
+        ))
+
+    # 5. Currency conversion (cross-currency)
+    if scored:
+        supplier_currencies = {s.pricing_tier.currency for s in scored}
+        mismatched = supplier_currencies - {ctx.currency}
+        if mismatched:
+            _, rate, source = fx_convert(1.0, list(mismatched)[0], ctx.currency)
+            uncertainties.append(Uncertainty(
+                uncertainty_type="assumption",
+                source="currency_conversion",
+                description=(
+                    f"Request currency ({ctx.currency}) differs from supplier pricing "
+                    f"currency ({', '.join(sorted(mismatched))}). Indicative conversion applied."
+                ),
+                assumption_made=(
+                    f"FX rate from {source}. This is for display purposes only."
+                ),
+                impact=(
+                    "All converted values are indicative. Budget sufficiency and "
+                    "approval tier determined using original currencies only."
+                ),
+                requires_approval=True,
+            ))
+
+    # 6. Quantity discrepancy
+    if ctx.quantity_discrepancy and ctx.quantity is not None and ctx.quantity_in_text is not None:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="assumption",
+            source="quantity_field",
+            description=(
+                f"Quantity field ({ctx.quantity:g}) differs from text-mentioned "
+                f"quantity ({ctx.quantity_in_text:g})."
+            ),
+            assumption_made=f"Used field value ({ctx.quantity:g}) over text value ({ctx.quantity_in_text:g}).",
+            impact="If text quantity is correct, pricing tier and total cost may differ.",
+        ))
+
+    # 7. Preferred supplier fuzzy match
+    if ctx.preferred_supplier_fuzzy_match and ctx.preferred_supplier_mentioned:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="ambiguity",
+            source="preferred_supplier",
+            description=(
+                f"Preferred supplier '{ctx.preferred_supplier_mentioned}' resolved "
+                f"to {ctx.preferred_supplier_id_resolved} via substring match."
+            ),
+            assumption_made=(
+                f"Resolved '{ctx.preferred_supplier_mentioned}' to "
+                f"{ctx.preferred_supplier_id_resolved} via substring."
+            ),
+            impact="If resolution is wrong, preference boost may apply to wrong supplier.",
+        ))
+
+    # 8. No historical awards
+    historical = data.historical_by_request.get(ctx.request_id, [])
+    if not historical:
+        uncertainties.append(Uncertainty(
+            uncertainty_type="missing_field",
+            source="historical_awards",
+            description=f"No historical awards found for {ctx.request_id}.",
+            assumption_made="Ranking based on current data only.",
+            impact="No precedent context available.",
+        ))
+
+    return uncertainties
+
+
+# ---------------------------------------------------------------------------
+# FX conversion helpers
+# ---------------------------------------------------------------------------
+
+def _compute_fx_info(
+    ctx: RequestContext,
+    scored: list[ScoredSupplier],
+) -> dict | None:
+    """If any supplier currency differs from request currency, compute FX info."""
+    if not scored:
+        return None
+
+    supplier_currencies = {s.pricing_tier.currency for s in scored}
+    mismatched = supplier_currencies - {ctx.currency}
+    if not mismatched:
+        return None
+
+    # Convert budget if available
+    interpretation_extra: dict = {}
+    if ctx.budget_amount is not None:
+        # Pick the first mismatched currency for display
+        other = sorted(mismatched)[0]
+        converted, rate, source = fx_convert(ctx.budget_amount, ctx.currency, other)
+        interpretation_extra = {
+            "budget_amount_indicative_converted": converted,
+            "budget_converted_currency": other,
+            "fx_rate_used": rate,
+            "fx_rate_source": source,
+            "fx_disclaimer": (
+                "Indicative only. Converted values require confirmation "
+                "before use in procurement decisions."
+            ),
+        }
+
+    return {
+        "request_currency": ctx.currency,
+        "interpretation_extra": interpretation_extra,
     }
