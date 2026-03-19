@@ -173,10 +173,12 @@ Rules:
 - Use only these scenario tags when relevant: {", ".join(enums["scenario_tags"])}
 - If the text is missing key information such as quantity, budget, or specification, include "missing_info".
 - If the text contains conflicting or internally inconsistent details, include "contradictory".
-- If the text names a supplier explicitly, set preferred_supplier_mentioned to that supplier name.
+- If the text names a supplier explicitly, set preferred_supplier_mentioned to that supplier name (a string, NOT a boolean). Never set preferred_supplier_mentioned to true/false.
 - Default status to "new" unless metadata explicitly provides another value.
+- CRITICAL field names — use these exact keys, no synonyms: budget_amount (not "budget"), incumbent_supplier (not "incumbent"), preferred_supplier_mentioned (not "preferred_supplier"), business_unit (not "businessUnit"), required_by_date (not "required_date" or "deadline").
 - delivery_countries should default to [country] when not otherwise specified and country is known.
 - data_residency_constraint and esg_requirement default to false unless the text or metadata clearly indicates true.
+- Convert shorthand numbers to plain integers: "400k" → 400000, "1.5M" → 1500000, "€400k" → 400000. Never use strings for numeric fields.
 
 Allowed category pairs:
 {category_reference}
@@ -270,7 +272,34 @@ def extract_request(
         response_format={"type": "json_object"},
     )
 
-    return json.loads(response.choices[0].message.content)
+    result = json.loads(response.choices[0].message.content)
+    return _normalize_fields(result)
+
+
+_FIELD_ALIASES: dict[str, str] = {
+    "budget": "budget_amount",
+    "total_budget": "budget_amount",
+    "budget_total": "budget_amount",
+    "incumbent": "incumbent_supplier",
+    "preferred_supplier": "preferred_supplier_mentioned",
+    "required_date": "required_by_date",
+    "deadline": "required_by_date",
+    "delivery_date": "required_by_date",
+}
+
+
+def _normalize_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Rename common LLM alias keys to the canonical schema field names."""
+    for alias, canonical in _FIELD_ALIASES.items():
+        if alias in data and canonical not in data:
+            data[canonical] = data.pop(alias)
+        elif alias in data:
+            data.pop(alias)  # canonical already present, drop the alias
+    # preferred_supplier_mentioned must be a string or null, never a boolean
+    psm = data.get("preferred_supplier_mentioned")
+    if isinstance(psm, bool):
+        data["preferred_supplier_mentioned"] = None
+    return data
 
 
 # Coordina tutto il flusso: legge input, prepara metadata, chiama Groq e stampa il JSON finale.

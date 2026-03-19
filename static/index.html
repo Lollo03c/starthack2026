@@ -67,6 +67,45 @@
     /* Scrollbar subtle */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+
+    /* ── Conversation chat bubbles ─────────────────────────────────── */
+    .msg-ai {
+      max-width: 82%;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 0 1rem 1rem 1rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: #374151;
+    }
+    .msg-user {
+      max-width: 82%;
+      background: #1d4ed8;
+      border-radius: 1rem 1rem 0 1rem;
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: white;
+      margin-left: auto;
+    }
+    .typing-indicator span {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #9ca3af;
+      margin: 0 2px;
+      animation: pulse-dot 1.2s infinite ease-in-out;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    #convo-input {
+      min-height: 40px;
+      max-height: 120px;
+      resize: none;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen font-sans text-sm text-gray-800 antialiased">
@@ -129,6 +168,51 @@
   <button id="btn-load-example" class="mt-6 text-xs text-gray-400 hover:text-blue-500 transition underline underline-offset-2">
     Load example request
   </button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     CONVERSATION PHASE  (validation chat, hidden by default)
+══════════════════════════════════════════════════════════════ -->
+<div id="convo-phase" class="hidden min-h-screen flex flex-col bg-gray-50">
+
+  <!-- Top bar -->
+  <div class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
+      <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
+    </div>
+    <span class="text-xs text-amber-600 font-medium bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Clarifying request…</span>
+  </div>
+
+  <!-- Messages area -->
+  <div id="convo-messages" class="flex-1 overflow-y-auto px-4 py-6 pb-40 max-w-2xl mx-auto w-full space-y-3"></div>
+
+  <!-- Submit bar (hidden until resolved) -->
+  <div id="convo-submit-bar" class="hidden fixed bottom-20 left-0 right-0 flex justify-center px-4 z-10 pb-1">
+    <button id="convo-submit-btn"
+      class="bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-2.5 rounded-xl shadow-lg transition text-sm">
+      Submit Request →
+    </button>
+  </div>
+
+  <!-- Input bar -->
+  <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 z-10">
+    <div class="max-w-2xl mx-auto flex items-end gap-3">
+      <textarea
+        id="convo-input"
+        class="flex-1 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
+        placeholder="Reply…"
+        rows="1"
+      ></textarea>
+      <button id="convo-send-btn"
+        class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
+        title="Send">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+        </svg>
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -264,6 +348,13 @@
   let loadedOutput = null;
   let loadedRequestText = null;
 
+  // Conversation state
+  let currentRequestJson = null;
+  let currentIssues = [];
+  let conversationMessages = [];
+  let conversationResolved = false;
+  let originalRequestText = '';
+
   // ── Dev panel visibility ───────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
   if (params.get('dev') === 'true') {
@@ -342,6 +433,18 @@
   async function transitionToChat() {
     $('result-phase').classList.add('hidden');
     $('result-phase').classList.remove('fade-in');
+
+    // Reset convo phase
+    $('convo-phase').classList.add('hidden');
+    $('convo-phase').classList.remove('fade-in');
+    $('convo-messages').innerHTML = '';
+    $('convo-submit-bar').classList.add('hidden');
+    currentRequestJson = null;
+    currentIssues = [];
+    conversationMessages = [];
+    conversationResolved = false;
+    originalRequestText = '';
+
     const chatPhase = $('chat-phase');
     chatPhase.style.display = '';
     chatPhase.style.opacity = '0';
@@ -352,6 +455,192 @@
       chatPhase.style.transform = 'translateY(0)';
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  // ── Conversation helpers ───────────────────────────────────────────────────
+  function formatBubbleText(text) {
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+  }
+
+  function appendMessage(role, content) {
+    const container = $('convo-messages');
+    const wrapper = document.createElement('div');
+    wrapper.className = (role === 'user' ? 'flex justify-end' : 'flex justify-start') + ' para-animate';
+    const bubble = document.createElement('div');
+    bubble.className = role === 'user' ? 'msg-user' : 'msg-ai';
+    bubble.innerHTML = formatBubbleText(content);
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    return wrapper;
+  }
+
+  function showTypingIndicator() {
+    const container = $('convo-messages');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex justify-start';
+    wrapper.id = 'typing-wrapper';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-ai';
+    bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function hideTypingIndicator() {
+    const el = document.getElementById('typing-wrapper');
+    if (el) el.remove();
+  }
+
+  function buildOpeningMessage(issues) {
+    const errors = issues.filter(i => i.severity === 'error');
+    const warnings = issues.filter(i => i.severity === 'warning');
+    const first = errors[0] || warnings[0];
+    const remaining = errors.length + warnings.length;
+
+    let msg = '';
+    if (remaining === 1) {
+      msg = 'Thanks! Just one thing I need to clarify before we proceed.\n\n';
+    } else {
+      msg = `Thanks! I need to clarify ${remaining} things before we can proceed — let's go one at a time.\n\n`;
+    }
+
+    if (first && first.question_for_user) {
+      msg += first.question_for_user;
+    }
+    return msg;
+  }
+
+  function enterConvoMode(requestJson, issues, openingMessage) {
+    currentRequestJson = requestJson;
+    currentIssues = issues;
+    conversationResolved = false;
+
+    // Show user's original prompt as the first bubble
+    conversationMessages = [
+      { role: 'user', content: originalRequestText },
+      { role: 'assistant', content: openingMessage },
+    ];
+
+    const phase = $('convo-phase');
+    phase.classList.remove('hidden');
+    phase.classList.add('fade-in');
+    appendMessage('user', originalRequestText);
+    appendMessage('assistant', openingMessage);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    setTimeout(() => $('convo-input').focus(), 100);
+  }
+
+  async function handleConvoSend() {
+    const input = $('convo-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+
+    // Keyword auto-submit when already resolved
+    if (conversationResolved) {
+      const lower = text.toLowerCase();
+      const submitKeywords = ['yes', 'submit', 'go ahead', 'proceed', 'ok', 'okay', 'sure', 'yep', 'yeah'];
+      if (submitKeywords.some(k => lower.includes(k))) {
+        appendMessage('user', text);
+        await proceedToProcess(currentRequestJson, originalRequestText);
+        return;
+      }
+    }
+
+    appendMessage('user', text);
+    conversationMessages.push({ role: 'user', content: text });
+
+    showTypingIndicator();
+    $('convo-send-btn').disabled = true;
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: conversationMessages,
+          request_json: currentRequestJson,
+          issues: currentIssues,
+          original_request_text: originalRequestText,
+        }),
+      });
+
+      hideTypingIndicator();
+      $('convo-send-btn').disabled = false;
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || res.statusText);
+      }
+
+      const data = await res.json();
+      currentRequestJson = data.updated_request_json;
+      currentIssues = data.remaining_issues;
+      conversationResolved = data.resolved;
+      devData.parsed = currentRequestJson;
+
+      appendMessage('assistant', data.reply);
+      conversationMessages.push({ role: 'assistant', content: data.reply });
+
+      if (data.resolved) {
+        $('convo-submit-bar').classList.remove('hidden');
+      }
+    } catch (e) {
+      hideTypingIndicator();
+      $('convo-send-btn').disabled = false;
+      appendMessage('assistant', 'Sorry, something went wrong. Please try again.');
+    }
+  }
+
+  async function proceedToProcess(requestJson, requestText) {
+    // Hide convo phase
+    $('convo-phase').classList.add('hidden');
+    $('convo-phase').classList.remove('fade-in');
+
+    resetResults();
+    showLoading('Evaluating suppliers and policies…');
+
+    try {
+      const processRes = await fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_json: requestJson }),
+      });
+      if (!processRes.ok) {
+        const err = await processRes.json().catch(() => ({ detail: processRes.statusText }));
+        throw new Error(err.detail || processRes.statusText);
+      }
+      const { output_json, request_json: returnedReq } = await processRes.json();
+      devData.output = output_json;
+
+      updateLoadingStatus('Generating AI explanation…');
+      const explainRes = await fetch('/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_json, request_text: requestText }),
+      });
+      if (!explainRes.ok) {
+        const err = await explainRes.json().catch(() => ({ detail: explainRes.statusText }));
+        throw new Error(err.detail || explainRes.statusText);
+      }
+      const { explanation } = await explainRes.json();
+
+      hideLoading();
+      renderDataSections(output_json, returnedReq || requestJson);
+      await transitionToResults();
+      await renderExplanationAnimated(explanation);
+
+    } catch (e) {
+      hideLoading();
+      alert('Error: ' + e.message);
+    }
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -522,6 +811,8 @@
       return;
     }
 
+    originalRequestText = text;
+
     // 1. Animate chat bar out
     const chatPhase = $('chat-phase');
     chatPhase.classList.add('fade-out-down');
@@ -546,43 +837,32 @@
       const { request_json } = await parseRes.json();
       devData.parsed = request_json;
 
-      // 3. /process
-      updateLoadingStatus('Evaluating suppliers and policies…');
-      const processRes = await fetch('/process', {
+      // 3. /validate
+      updateLoadingStatus('Checking your request…');
+      const validateRes = await fetch('/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_json }),
+        body: JSON.stringify({ request_json, original_request_text: text }),
       });
-      if (!processRes.ok) {
-        const err = await processRes.json().catch(() => ({ detail: processRes.statusText }));
-        throw new Error(err.detail || processRes.statusText);
+      if (!validateRes.ok) {
+        const err = await validateRes.json().catch(() => ({ detail: validateRes.statusText }));
+        throw new Error(err.detail || validateRes.statusText);
       }
-      const { output_json, request_json: returnedReq } = await processRes.json();
-      devData.output = output_json;
+      const { valid, issues } = await validateRes.json();
 
-      // 4. /explain
-      updateLoadingStatus('Generating AI explanation…');
-      const explainRes = await fetch('/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output_json, request_text: text }),
-      });
-      if (!explainRes.ok) {
-        const err = await explainRes.json().catch(() => ({ detail: explainRes.statusText }));
-        throw new Error(err.detail || explainRes.statusText);
-      }
-      const { explanation } = await explainRes.json();
-
-      // 5. Show results
       hideLoading();
-      renderDataSections(output_json, returnedReq || request_json);
-      await transitionToResults();
-      await renderExplanationAnimated(explanation);
+
+      if (valid) {
+        // Happy path — skip chat, go straight to processing
+        await proceedToProcess(request_json, text);
+      } else {
+        // Enter conversation mode to resolve issues
+        enterConvoMode(request_json, issues, buildOpeningMessage(issues));
+      }
 
     } catch (e) {
       hideLoading();
       chatPhase.style.display = '';
-      // Show error in result phase briefly
       alert('Error: ' + e.message);
     }
   }
@@ -633,6 +913,25 @@
       alert('Failed to load example: ' + e.message);
     }
   }
+
+  // ── Conversation input wiring ─────────────────────────────────────────────
+  $('convo-send-btn').addEventListener('click', handleConvoSend);
+
+  $('convo-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleConvoSend();
+    }
+  });
+
+  $('convo-input').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  $('convo-submit-btn').addEventListener('click', () => {
+    proceedToProcess(currentRequestJson, originalRequestText);
+  });
 
   // ── New Request ───────────────────────────────────────────────────────────
   $('btn-new-request').addEventListener('click', async () => {

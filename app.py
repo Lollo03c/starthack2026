@@ -83,3 +83,30 @@ def explain(body: ExplainRequest):
 
     explanation = explain_decision(body.output_json, body.request_text)
     return {"explanation": explanation}
+
+
+class ValidateRequest(BaseModel):
+    request_json: dict
+    original_request_text: str = ""
+
+
+@app.post("/validate")
+def validate_endpoint(body: ValidateRequest):
+    from validation import validate_request  # noqa: PLC0415
+
+    valid, issues = validate_request(body.request_json, body.original_request_text)
+    return {"valid": valid, "issues": issues}
+
+
+class ChatRequest(BaseModel):
+    messages: list
+    request_json: dict
+    issues: list
+    original_request_text: str = ""
+
+
+@app.post("/chat")
+def chat_endpoint(body: ChatRequest):
+    from chatbot import run_chat_turn  # noqa: PLC0415
+
+    return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text)
