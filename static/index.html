@@ -55,22 +55,20 @@
     /* ── Chat bubbles ─────────────────────────────────────────────── */
     .msg-ai {
       max-width: 82%;
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 0 1rem 1rem 1rem;
-      padding: 0.75rem 1rem;
+      background: transparent;
+      padding: 0.25rem 0;
       font-size: 0.875rem;
       line-height: 1.6;
-      color: #374151;
+      color: #1a1a1a;
     }
     .msg-user {
       max-width: 82%;
-      background: #1d4ed8;
-      border-radius: 1rem 1rem 0 1rem;
-      padding: 0.75rem 1rem;
+      background: #f0f0f0;
+      border-radius: 1.25rem;
+      padding: 0.625rem 1rem;
       font-size: 0.875rem;
       line-height: 1.6;
-      color: white;
+      color: #1a1a1a;
       margin-left: auto;
     }
     .typing-indicator span {
@@ -86,7 +84,7 @@
 
     #chat-input {
       min-height: 40px;
-      max-height: 120px;
+      max-height: 200px;
       resize: none;
       overflow-y: auto;
     }
@@ -95,20 +93,21 @@
     #chat-area { position: relative; }
 
     #chat-input-bar {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      bottom: 38%;
       width: 100%;
       max-width: 42rem;
-      padding: 0 1rem;
-      transition: bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      padding: 0 1rem 2rem;
+      margin: 0 auto;
       z-index: 10;
       background: transparent;
       border: none;
+      flex-shrink: 0;
     }
     #chat-input-bar.chat-mode {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
       bottom: 1rem;
+      padding-bottom: 0;
     }
     #chat-input-bar .input-pill {
       background: white;
@@ -226,19 +225,15 @@
 ══════════════════════════════════════════════════════════════ -->
 <div id="app" class="h-screen flex flex-col">
 
-  <!-- Top bar (hidden initially, shown after first submit) -->
-  <div id="top-bar" class="hidden sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
-    <div class="flex items-center gap-2">
-      <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
-      <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
-    </div>
-    <div class="flex items-center gap-3">
-      <button id="btn-new-request"
-        class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition"
-        onclick="resetToInitial()">
-        ← New Request
-      </button>
-    </div>
+  <!-- Top bar (always visible, ChatGPT-style) -->
+  <div id="top-bar" class="sticky top-0 z-20 bg-white px-4 py-2.5 flex items-center justify-between shrink-0">
+    <button id="btn-new-request" class="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition rounded-lg px-2 py-1.5 hover:bg-gray-100" onclick="resetToInitial()">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
+      <span class="text-sm font-medium">New chat</span>
+    </button>
+    <span class="text-sm font-semibold text-gray-800">ChainIQ Sourcing</span>
   </div>
 
   <!-- Main content area -->
@@ -594,7 +589,6 @@
     // Show top bar and messages after hero fades
     setTimeout(() => {
       hero.classList.add('hidden');
-      $('top-bar').classList.remove('hidden');
       $('messages').classList.remove('hidden');
       $('chat-input').placeholder = 'Reply…';
     }, 400);
@@ -1950,9 +1944,6 @@
     $('messages').innerHTML = '';
     $('messages').classList.add('hidden');
 
-    // Hide top bar
-    $('top-bar').classList.add('hidden');
-
     // Reset legacy result phase
     $('result-phase').classList.add('hidden');
 
@@ -2015,7 +2006,7 @@
 
   $('chat-input').addEventListener('input', function () {
     this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    this.style.height = Math.min(this.scrollHeight, 200) + 'px';
   });
 
   // Request details toggle (legacy)
