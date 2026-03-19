@@ -157,79 +157,48 @@
   </div>
 
   <!-- Content -->
-  <main class="max-w-3xl mx-auto px-4 py-10 space-y-10">
+  <main class="max-w-7xl mx-auto px-4 py-10">
+    <div class="lg:grid lg:grid-cols-[140px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[150px_minmax(0,1fr)]">
+      <aside class="hidden lg:block">
+        <div class="sticky top-24">
+          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400">Index</div>
+          <nav id="analysis-index-links" class="mt-2 flex flex-col gap-1.5 pl-1"></nav>
+        </div>
+      </aside>
 
-    <!-- Status banner -->
-    <div id="status-banner" class="hidden rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
-      <span id="status-icon" class="text-2xl"></span>
-      <div>
-        <div id="status-title" class="font-bold text-base"></div>
-        <div id="status-reason" class="text-sm opacity-80 mt-0.5"></div>
+      <div class="space-y-10">
+        <!-- AI Explanation -->
+        <section>
+          <div class="flex items-end justify-between gap-4 mb-4">
+            <div>
+              <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest">AI Analysis</h2>
+              <p class="mt-1 text-sm text-gray-500 leading-relaxed">Primary reasoning output in plain language, with the commercial and policy logic explained for a human reader.</p>
+            </div>
+          </div>
+          <div class="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+            <div id="explanation-container" class="prose max-w-none text-gray-700 text-[15px] leading-relaxed space-y-2"></div>
+          </div>
+        </section>
+
+        <!-- Status banner -->
+        <div id="status-banner" class="hidden rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
+          <span id="status-icon" class="text-2xl"></span>
+          <div>
+            <div id="status-title" class="font-bold text-base"></div>
+            <div id="status-reason" class="text-sm opacity-80 mt-0.5"></div>
+          </div>
+        </div>
+
+        <!-- Request details (collapsible) -->
+        <section id="request-section" class="hidden">
+          <button id="btn-toggle-request" class="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+            <span>Request Details</span>
+            <span id="request-toggle-icon" class="text-gray-400 text-base">▶</span>
+          </button>
+          <dl id="request-fields" class="hidden bg-white rounded-xl border border-gray-200 shadow-sm p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"></dl>
+        </section>
       </div>
     </div>
-
-    <!-- AI Explanation -->
-    <section>
-      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">AI Analysis</h2>
-      <div id="explanation-container" class="prose max-w-none text-gray-700 text-sm leading-relaxed space-y-2"></div>
-    </section>
-
-    <!-- Supplier shortlist -->
-    <section id="supplier-section" class="hidden">
-      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Supplier Shortlist</h2>
-      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-xs border-collapse">
-            <thead>
-              <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
-                <th class="px-3 py-2.5 font-semibold">#</th>
-                <th class="px-3 py-2.5 font-semibold">Supplier</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Pref</th>
-                <th class="px-3 py-2.5 font-semibold text-right">Unit €</th>
-                <th class="px-3 py-2.5 font-semibold text-right">Total €</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
-                <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Lead (std)</th>
-                <th class="px-3 py-2.5 font-semibold text-center">OK</th>
-              </tr>
-            </thead>
-            <tbody id="supplier-tbody" class="divide-y divide-gray-100"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- Validation -->
-    <section id="validation-section" class="hidden">
-      <div class="flex items-center gap-3 mb-4">
-        <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest">Validation</h2>
-        <span id="badge-validation" class="text-xs font-bold px-2 py-0.5 rounded-full"></span>
-      </div>
-      <ul id="issues-list" class="space-y-2"></ul>
-    </section>
-
-    <!-- Escalations -->
-    <section id="escalation-section" class="hidden">
-      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Escalations</h2>
-      <ul id="escalations-list" class="space-y-2"></ul>
-    </section>
-
-    <!-- Excluded suppliers -->
-    <section id="excluded-section" class="hidden">
-      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Excluded Suppliers</h2>
-      <ul id="excluded-list" class="space-y-1 text-xs text-gray-600"></ul>
-    </section>
-
-    <!-- Request details (collapsible) -->
-    <section id="request-section" class="hidden">
-      <button id="btn-toggle-request" class="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
-        <span>Request Details</span>
-        <span id="request-toggle-icon" class="text-gray-400 text-base">▶</span>
-      </button>
-      <dl id="request-fields" class="hidden bg-white rounded-xl border border-gray-200 shadow-sm p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"></dl>
-    </section>
-
   </main>
 </div>
 
@@ -275,6 +244,13 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const fmt = n => n != null ? Number(n).toLocaleString('en-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—';
   const fmtInt = n => n != null ? Number(n).toLocaleString() : '—';
+  const escapeHtml = value => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+  let analysisObserver = null;
 
   function severityClass(sev) {
     if (sev === 'critical') return 'bg-red-100 border-red-300 text-red-800';
@@ -319,6 +295,22 @@
   }
   $('dev-modal').addEventListener('click', e => {
     if (e.target === $('dev-modal')) closeDevModal();
+  });
+  document.addEventListener('click', e => {
+    const toggle = e.target.closest('[data-ranking-toggle]');
+    if (!toggle) return;
+    const panel = toggle.closest('[data-analysis-section]')?.querySelector('[data-ranking-panel]');
+    if (!panel) return;
+    panel.classList.toggle('hidden');
+    toggle.textContent = panel.classList.contains('hidden') ? 'Show ranking' : 'Hide ranking';
+  });
+  document.addEventListener('click', e => {
+    const jump = e.target.closest('[data-analysis-jump]');
+    if (!jump) return;
+    const target = document.getElementById(jump.dataset.analysisJump);
+    if (!target) return;
+    setActiveAnalysisIndex(jump.dataset.analysisJump);
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   // ── Phase transitions ─────────────────────────────────────────────────────
@@ -372,82 +364,6 @@
     $('status-reason').textContent = rec.reason || '';
   }
 
-  function renderSuppliers(shortlist) {
-    if (!shortlist || shortlist.length === 0) return;
-    const tbody = $('supplier-tbody');
-    tbody.innerHTML = shortlist.map((s, idx) => {
-      const rowBg = idx === 0 ? 'bg-blue-50' : '';
-      return `<tr class="${rowBg} hover:bg-gray-50">
-        <td class="px-3 py-2.5 font-bold text-gray-400">${s.rank}</td>
-        <td class="px-3 py-2.5">
-          <div class="font-semibold text-gray-800">${s.supplier_name}</div>
-          <div class="text-gray-400 text-xs">${s.supplier_id}</div>
-        </td>
-        <td class="px-3 py-2.5 text-center">${s.preferred ? '⭐' : ''}${s.incumbent ? ' <span class="text-indigo-600 font-semibold text-xs">Inc.</span>' : ''}</td>
-        <td class="px-3 py-2.5 text-right font-mono">${fmt(s.unit_price_eur)}</td>
-        <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
-        <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
-        <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
-        <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
-        <td class="px-3 py-2.5 text-center">${s.standard_lead_time_days ?? '—'}d</td>
-        <td class="px-3 py-2.5 text-center">${s.policy_compliant ? '<span class="text-green-600 font-bold">✓</span>' : '<span class="text-red-500 font-bold">✗</span>'}</td>
-      </tr>`;
-    }).join('');
-    $('supplier-section').classList.remove('hidden');
-  }
-
-  function renderValidation(val) {
-    const issues = val.issues_detected || [];
-    const badge = $('badge-validation');
-    if (val.completeness === 'pass') {
-      badge.textContent = 'PASS';
-      badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800';
-    } else {
-      badge.textContent = 'FAIL';
-      badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800';
-    }
-    if (issues.length > 0) {
-      $('issues-list').innerHTML = issues.map(i => `
-        <li class="border rounded-lg p-3 text-xs ${severityClass(i.severity)}">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="font-bold uppercase">${i.severity}</span>
-            <span class="font-semibold">${i.issue_id}</span>
-            <span class="opacity-70">${i.type}</span>
-          </div>
-          <p class="mb-1">${i.description}</p>
-          <p class="opacity-80"><span class="font-semibold">Action:</span> ${i.action_required}</p>
-        </li>`).join('');
-    } else {
-      $('issues-list').innerHTML = '<li class="text-xs text-gray-400 italic">No issues detected.</li>';
-    }
-    $('validation-section').classList.remove('hidden');
-  }
-
-  function renderEscalations(escalations) {
-    if (!escalations || escalations.length === 0) return;
-    $('escalations-list').innerHTML = escalations.map(e => `
-      <li class="border rounded-lg p-3 text-xs ${e.blocking ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}">
-        <div class="flex items-center gap-2 mb-1">
-          ${e.blocking
-            ? '<span class="bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">BLOCKING</span>'
-            : '<span class="bg-yellow-500 text-white text-xs font-bold px-1.5 py-0.5 rounded">INFO</span>'}
-          <span class="font-semibold">${e.escalation_id}</span>
-          <span class="text-gray-500">${e.rule}</span>
-        </div>
-        <p class="mb-1">${e.trigger}</p>
-        <p class="text-gray-600"><span class="font-semibold">→ Escalate to:</span> ${e.escalate_to}</p>
-      </li>`).join('');
-    $('escalation-section').classList.remove('hidden');
-  }
-
-  function renderExcluded(excluded) {
-    if (!excluded || excluded.length === 0) return;
-    $('excluded-list').innerHTML = excluded.map(s =>
-      `<li class="flex gap-2 text-xs"><span class="text-red-500 font-bold shrink-0">✗</span><span><span class="font-semibold">${s.supplier_name}</span> — ${s.reason}</span></li>`
-    ).join('');
-    $('excluded-section').classList.remove('hidden');
-  }
-
   function renderRequestDetails(req, out) {
     const interp = out.request_interpretation || {};
     const fields = [
@@ -467,15 +383,281 @@
     $('request-section').classList.remove('hidden');
   }
 
+  function sectionSlug(title) {
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+
+  function splitExplanationSections(markdown) {
+    const lines = String(markdown || '').split('\n');
+    const sections = [];
+    let current = null;
+
+    lines.forEach(line => {
+      if (line.startsWith('## ')) {
+        if (current) sections.push(current);
+        current = { title: line.slice(3).trim(), content: '' };
+        return;
+      }
+
+      if (!current) return;
+      current.content += `${current.content ? '\n' : ''}${line}`;
+    });
+
+    if (current) sections.push(current);
+    return sections;
+  }
+
+  function renderMetric(label, value, tone = 'text-gray-900') {
+    return `<div class="rounded-xl bg-gray-50 border border-gray-200 px-3 py-2">
+      <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">${label}</div>
+      <div class="mt-1 text-sm font-semibold ${tone}">${value}</div>
+    </div>`;
+  }
+
+  function renderAnalysisIndex(sections) {
+    const container = $('analysis-index-links');
+    if (!container) return;
+    if (!sections || sections.length === 0) {
+      container.innerHTML = '<span class="text-xs text-gray-400">No sections available.</span>';
+      return;
+    }
+
+    container.innerHTML = sections.map(section => {
+      const slug = sectionSlug(section.title);
+      return `<button
+        type="button"
+        data-analysis-jump="${slug}"
+        class="w-full rounded-md border-l-2 border-transparent bg-transparent px-2 py-1 text-left text-[11px] leading-tight font-medium text-gray-400 transition hover:border-blue-300 hover:bg-blue-50/60 hover:text-blue-700"
+      >${escapeHtml(section.title)}</button>`;
+    }).join('');
+
+    setActiveAnalysisIndex(sectionSlug(sections[0].title));
+  }
+
+  function setActiveAnalysisIndex(slug) {
+    const buttons = Array.from(document.querySelectorAll('[data-analysis-jump]'));
+    buttons.forEach(button => {
+      const isActive = button.dataset.analysisJump === slug;
+      button.className = isActive
+        ? 'w-full rounded-md border-l-2 border-blue-600 bg-blue-50/80 px-2 py-1 text-left text-[11px] leading-tight font-semibold text-blue-800'
+        : 'w-full rounded-md border-l-2 border-transparent bg-transparent px-2 py-1 text-left text-[11px] leading-tight font-medium text-gray-400 transition hover:border-blue-300 hover:bg-blue-50/60 hover:text-blue-700';
+    });
+  }
+
+  function setupAnalysisSectionObserver() {
+    if (analysisObserver) {
+      analysisObserver.disconnect();
+      analysisObserver = null;
+    }
+
+    const sections = Array.from(document.querySelectorAll('[data-analysis-section]'));
+    if (sections.length === 0) return;
+
+    analysisObserver = new IntersectionObserver(entries => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+
+      if (visible.length > 0) {
+        setActiveAnalysisIndex(visible[0].target.id);
+      }
+    }, {
+      root: null,
+      rootMargin: '-20% 0px -60% 0px',
+      threshold: [0.2, 0.4, 0.6],
+    });
+
+    sections.forEach(section => analysisObserver.observe(section));
+  }
+
+  function renderRankingTable(shortlist, hidden = false) {
+    if (!shortlist || shortlist.length === 0) return '';
+    return `<div class="${hidden ? 'hidden ' : ''}mt-4 overflow-x-auto rounded-xl border border-gray-200" data-ranking-panel>
+      <table class="w-full text-xs border-collapse bg-white">
+        <thead>
+          <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
+            <th class="px-3 py-2.5 font-semibold">#</th>
+            <th class="px-3 py-2.5 font-semibold">Supplier</th>
+            <th class="px-3 py-2.5 font-semibold text-right">Total €</th>
+            <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
+            <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
+            <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
+            <th class="px-3 py-2.5 font-semibold text-center">Lead</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          ${shortlist.map((s, idx) => `<tr class="${idx === 0 ? 'bg-blue-50' : 'bg-white'}">
+            <td class="px-3 py-2.5 font-bold text-gray-400">${s.rank}</td>
+            <td class="px-3 py-2.5">
+              <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
+              <div class="text-gray-400 text-[11px]">${s.preferred ? 'Preferred' : 'Standard'}${s.incumbent ? ' • Incumbent' : ''}</div>
+            </td>
+            <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
+            <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
+            <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
+            <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
+            <td class="px-3 py-2.5 text-center">${s.standard_lead_time_days ?? '—'}d</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  function renderTopRecommendationVisual(out) {
+    const top = (out.supplier_shortlist || [])[0];
+    if (!top) return '';
+
+    return `<div class="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Top Recommendation</div>
+          <h4 class="mt-1 text-lg font-semibold text-gray-900">${escapeHtml(top.supplier_name)}</h4>
+          <p class="mt-1 text-sm text-gray-600">${escapeHtml(top.recommendation_note || 'Best-ranked supplier based on the current sourcing outcome.')}</p>
+        </div>
+        <button type="button" data-ranking-toggle class="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-500 hover:text-blue-900">
+          Show ranking
+        </button>
+      </div>
+      <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        ${renderMetric('Total Price', `EUR ${fmt(top.total_price_eur)}`)}
+        ${renderMetric('Unit Price', `EUR ${fmt(top.unit_price_eur)}`)}
+        ${renderMetric('Quality', top.quality_score ?? '—', scoreColor(top.quality_score))}
+        ${renderMetric('Risk', top.risk_score ?? '—', scoreColor(top.risk_score, true))}
+        ${renderMetric('ESG', top.esg_score ?? '—', scoreColor(top.esg_score))}
+        ${renderMetric('Lead Time', `${top.standard_lead_time_days ?? '—'} days`)}
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2 text-xs">
+        ${top.preferred ? '<span class="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-800">Preferred supplier</span>' : ''}
+        ${top.incumbent ? '<span class="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-800">Incumbent</span>' : ''}
+        ${top.policy_compliant ? '<span class="rounded-full bg-green-100 px-2.5 py-1 font-semibold text-green-800">Policy compliant</span>' : '<span class="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-800">Not compliant</span>'}
+      </div>
+      ${renderRankingTable(out.supplier_shortlist || [], true)}
+    </div>`;
+  }
+
+  function renderAlternativesVisual(out) {
+    const shortlist = out.supplier_shortlist || [];
+    if (shortlist.length <= 1) return '';
+    const top = shortlist[0];
+    const alternatives = shortlist.slice(1);
+
+    return `<div class="mt-5 overflow-x-auto rounded-2xl border border-gray-200">
+      <table class="w-full text-xs border-collapse bg-white">
+        <thead>
+          <tr class="bg-gray-50 text-left text-gray-500 border-b border-gray-200">
+            <th class="px-3 py-2.5 font-semibold">Supplier</th>
+            <th class="px-3 py-2.5 font-semibold text-right">Delta vs #1</th>
+            <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
+            <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
+            <th class="px-3 py-2.5 font-semibold text-center">Lead</th>
+            <th class="px-3 py-2.5 font-semibold">Tradeoff</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          ${alternatives.map(s => {
+            const delta = (s.total_price_eur ?? 0) - (top.total_price_eur ?? 0);
+            const deltaLabel = `${delta >= 0 ? '+' : '-'}EUR ${fmt(Math.abs(delta))}`;
+            const tradeoff = delta > 0
+              ? 'Costs more than #1 in exchange for a different quality-risk profile.'
+              : 'Costs less than #1 but gives up strength on other evaluation factors.';
+            return `<tr>
+              <td class="px-3 py-3">
+                <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
+                <div class="text-[11px] text-gray-400">Rank ${s.rank}${s.preferred ? ' • Preferred' : ''}</div>
+              </td>
+              <td class="px-3 py-3 text-right font-mono ${delta <= 0 ? 'text-green-700' : 'text-orange-700'}">${deltaLabel}</td>
+              <td class="px-3 py-3 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
+              <td class="px-3 py-3 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
+              <td class="px-3 py-3 text-center">${s.standard_lead_time_days ?? '—'}d</td>
+              <td class="px-3 py-3 text-gray-600">${escapeHtml(s.recommendation_note || tradeoff)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  function inferExclusionLabel(reason) {
+    const text = (reason || '').toLowerCase();
+    if (text.includes('risk')) return 'Risk';
+    if (text.includes('restrict')) return 'Restriction';
+    if (text.includes('geograph') || text.includes('country')) return 'Geography';
+    if (text.includes('capacity')) return 'Capacity';
+    if (text.includes('preferred')) return 'Preference';
+    return 'Constraint';
+  }
+
+  function renderExcludedVisual(out) {
+    const excluded = out.suppliers_excluded || [];
+    if (excluded.length === 0) return '';
+
+    return `<div class="mt-5 grid gap-3">
+      ${excluded.map(s => `<div class="rounded-2xl border border-red-200 bg-red-50/60 p-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <h4 class="text-sm font-semibold text-gray-900">${escapeHtml(s.supplier_name)}</h4>
+          <span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-red-700 border border-red-200">${inferExclusionLabel(s.reason)}</span>
+        </div>
+        <p class="mt-2 text-sm leading-relaxed text-gray-700">${escapeHtml(s.reason)}</p>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  function renderEscalationsVisual(out) {
+    const escalations = out.escalations || [];
+    if (escalations.length === 0) return '';
+
+    return `<div class="mt-5 grid gap-3">
+      ${escalations.map(e => `<div class="rounded-2xl border p-4 ${e.blocking ? 'border-red-200 bg-red-50/70' : 'border-yellow-200 bg-yellow-50/70'}">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="rounded-full px-2 py-0.5 text-[11px] font-bold ${e.blocking ? 'bg-red-600 text-white' : 'bg-yellow-500 text-white'}">${e.blocking ? 'BLOCKING' : 'INFO'}</span>
+          <span class="text-xs font-semibold text-gray-500">${escapeHtml(e.rule || e.escalation_id)}</span>
+          <span class="text-sm font-semibold text-gray-900">${escapeHtml(e.escalation_id)}</span>
+        </div>
+        <p class="mt-2 text-sm leading-relaxed text-gray-700">${escapeHtml(e.trigger)}</p>
+        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+          <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Owner: ${escapeHtml(e.escalate_to || '—')}</span>
+          <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Rule: ${escapeHtml(e.rule || '—')}</span>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  function renderSectionVisual(title, out) {
+    if (title === 'Top Recommendation') return renderTopRecommendationVisual(out);
+    if (title === 'Alternatives') return renderAlternativesVisual(out);
+    if (title === 'Excluded Suppliers') return renderExcludedVisual(out);
+    if (title === 'Escalations') return renderEscalationsVisual(out);
+    return '';
+  }
+
+  function renderAnalysisSection(section, out) {
+    const bodyHtml = marked.parse(section.content || '');
+    const visualHtml = renderSectionVisual(section.title, out);
+    const sectionClasses = section.title === 'Decision Summary'
+      ? 'rounded-2xl border border-gray-200 bg-gray-50/70 p-5'
+      : 'rounded-2xl border border-gray-200 bg-white p-5';
+
+    const slug = sectionSlug(section.title);
+
+    return `<section id="${slug}" data-analysis-section="${slug}" class="${sectionClasses}">
+      <header class="mb-4">
+        <h3 class="text-base font-semibold text-gray-900">${escapeHtml(section.title)}</h3>
+      </header>
+      <div class="prose max-w-none text-gray-700 text-[15px] leading-relaxed">${bodyHtml}</div>
+      ${visualHtml}
+    </section>`;
+  }
+
   // ── Explanation with staggered animation ─────────────────────────────────
   async function renderExplanationAnimated(explanation) {
     const container = $('explanation-container');
     container.innerHTML = '';
-
-    // Parse markdown to HTML, then split into paragraph elements
-    const html = marked.parse(explanation);
     const temp = document.createElement('div');
-    temp.innerHTML = html;
+    const sections = splitExplanationSections(explanation);
+    renderAnalysisIndex(sections);
+    temp.innerHTML = sections.length > 0
+      ? sections.map(section => renderAnalysisSection(section, loadedOutput || {})).join('')
+      : marked.parse(explanation);
     const nodes = Array.from(temp.children);
 
     nodes.forEach((node, i) => {
@@ -483,20 +665,19 @@
       node.style.animationDelay = `${i * 160}ms`;
       container.appendChild(node);
     });
+
+    setupAnalysisSectionObserver();
   }
 
   // ── Reset all result sections ─────────────────────────────────────────────
   function resetResults() {
+    if (analysisObserver) {
+      analysisObserver.disconnect();
+      analysisObserver = null;
+    }
     $('explanation-container').innerHTML = '';
+    $('analysis-index-links').innerHTML = '';
     $('status-banner').classList.add('hidden');
-    $('supplier-section').classList.add('hidden');
-    $('supplier-tbody').innerHTML = '';
-    $('validation-section').classList.add('hidden');
-    $('issues-list').innerHTML = '';
-    $('escalation-section').classList.add('hidden');
-    $('escalations-list').innerHTML = '';
-    $('excluded-section').classList.add('hidden');
-    $('excluded-list').innerHTML = '';
     $('request-section').classList.add('hidden');
     $('request-fields').classList.add('hidden');
     $('request-toggle-icon').textContent = '▶';
@@ -505,10 +686,6 @@
   // ── Render all from output JSON ───────────────────────────────────────────
   function renderDataSections(out, req) {
     renderStatusBanner(out.recommendation || {});
-    renderSuppliers(out.supplier_shortlist || []);
-    renderValidation(out.validation || {});
-    renderEscalations(out.escalations || []);
-    renderExcluded(out.suppliers_excluded || []);
     renderRequestDetails(req || {}, out);
     loadedOutput = out;
     loadedRequestText = (req && req.request_text) || null;
