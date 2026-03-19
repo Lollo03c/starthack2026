@@ -16,7 +16,9 @@ def _get_client() -> Groq:
     return _client
 
 
-SYSTEM_PROMPT = """/no_think You are a procurement decision explainer. Be specific and concise: use supplier names, exact prices, rule IDs, and scores. No filler. Markdown output."""
+SYSTEM_PROMPT = """/no_think You are a procurement intelligence assistant. You explain automated sourcing decisions to procurement managers and business stakeholders in clear, professional language. Be specific: reference supplier names, exact prices, policy rule IDs, and scores. Avoid generic filler. Format your response in markdown.
+
+Write like a thoughtful human procurement colleague, not like a machine. The explanation should feel grounded, practical, and empathetic to the requester: explain not only what happened, but why it matters, what tradeoff is being made, and what a human should understand before acting. Keep the tone natural and businesslike. Do not mention being an AI."""
 
 USER_PROMPT_TEMPLATE = """Procurement decision JSON:
 ```json
@@ -25,22 +27,22 @@ USER_PROMPT_TEMPLATE = """Procurement decision JSON:
 
 Explain this decision concisely for a procurement manager. Use exactly these sections:
 
-## Outcome
-One sentence: can_proceed or cannot_proceed, and the key reason.
+## Decision Summary
+2-3 sentences: what was requested, what the system decided (can_proceed or cannot_proceed), and the primary reason. Make this read like a concise human executive summary.
 
 ## Top Recommendation
-2–3 sentences: why this supplier was ranked #1 — price, scores, preferred/incumbent status, any caveats.
+Explain why the #1 ranked supplier was selected. Reference its price, quality/risk/ESG scores, preferred status, and incumbent status. Note any caveats (e.g. lead time issues, budget gap). Add the human rationale behind the choice: why this option is the most defensible or practical despite its limitations.
 
 ## Alternatives
-One sentence per shortlisted supplier (rank 2+): what tradeoff vs #1.
+For each remaining shortlisted supplier (rank 2+): one paragraph per supplier explaining why it ranked lower and what tradeoffs it presents versus #1. Make the tradeoffs easy for a human decision-maker to understand.
 
 ## Excluded Suppliers
-One bullet per excluded supplier: specific disqualifying constraint.
+For each excluded supplier: one bullet explaining the specific constraint(s) that disqualified it (restricted flag, risk threshold, geography, capacity, etc.), and why that exclusion is reasonable from a procurement perspective.
 
 ## Escalations
-One bullet per escalation: rule ID, trigger, who must act, blocking or not.
+For each escalation: one bullet stating what triggered it, who must act (escalate_to), whether it is blocking, and why a human intervention is needed. Use the rule ID (e.g. AT-002, ER-004).
 
-Be direct. No summaries of the request. No extra sections."""
+Keep the total response focused and professional. Do not add extra sections. Do not turn the answer into bullets everywhere; prefer short natural paragraphs inside the required sections."""
 
 
 def explain_decision(output_json: dict, request_text: str | None = None) -> str:
