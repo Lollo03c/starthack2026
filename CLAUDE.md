@@ -145,7 +145,7 @@ The explanation should cover: system design overview, clear reasoning logic, how
 
 ### Tech Stack
 - **Backend**: FastAPI (Python 3.13) + Uvicorn, served at `http://localhost:8000`
-- **LLM**: Groq API (`llama-3.3-70b-versatile`) — used for both parsing and explanation
+- **LLM**: Groq API (`qwen/qwen3-32b`) — used for parsing, validation, chat, and explanation
 - **Frontend**: Single-page HTML + Tailwind CSS (CDN) + vanilla JS, no build step
 - **Env**: `.venv` virtualenv, secrets in `.env` (`GROQ_API_KEY` required)
 - **Run**: `uvicorn app:app --reload` from the project root (with `.venv` activated)
@@ -183,18 +183,22 @@ The explanation should cover: system design overview, clear reasoning logic, how
 4. Results phase fades in: AI explanation paragraphs animate in with 160ms stagger, then supplier table, validation, escalations, excluded suppliers, collapsible request details
 5. "← New Request" button in sticky top bar resets and restores the chat bar
 6. "Load example request" link (subtle, bottom of chat phase) loads demo data and also calls `/explain`
-7. Dev panel (bottom-right corner, only visible at `?dev=true`): two buttons open dark modals with prettified Parsed JSON / Output JSON
+7. Dev panel (bottom-right corner, only visible at `?dev=true`): three buttons open dark modals — Parsed JSON, Output JSON, Provenance / Notes (`field_provenance` + `inference_notes` from `/parse`, stored separately in `devData.provenance`)
 
 ### Key Implementation Decisions & Constraints
 
-- **Groq `json_schema` not supported** on `llama-3.3-70b-versatile` — must use `response_format: { type: "json_object" }`. The prompt describes the schema instead of enforcing it structurally.
+- **Groq `json_schema` not supported** — must use `response_format: { type: "json_object" }`. The prompt describes the schema instead of enforcing it structurally.
+- **Model**: `qwen/qwen3-32b` across all four LLM files. Previous models tried: `llama-3.3-70b-versatile` (hit daily TPD limit), `llama-3.1-8b-instant` (schema drift — confused provenance values with field values), `llama3-70b-8192` (decommissioned), `mixtral-8x7b-32768` (decommissioned). Check available models with the Groq `/openai/v1/models` endpoint if another switch is needed.
 - **`/process` is a stub** — always returns `example_output.json` regardless of parsed request. The real processing engine (policy evaluation, supplier matching, escalation logic) is the main thing left to build.
 - **`scripts/extract_request.py`** is also a standalone CLI: `python scripts/extract_request.py --request-text "..." --metadata-json '{}'`
 - **No database** — all data is read from CSV/JSON files at request time.
 - **`explainer.py`** lazy-initialises a single Groq client (module-level singleton).
 - **LLM field name drift** — the parser LLM sometimes outputs aliased field names (`budget` instead of `budget_amount`, `preferred_supplier` instead of `preferred_supplier_mentioned`, etc.). `_normalize_fields()` in `extract_request.py` remaps known aliases post-parse. Add new aliases there if new drift is observed.
 - **`preferred_supplier_mentioned`** must be a string (supplier name) or null — never a boolean. The LLM sometimes sets it to `true`; `_normalize_fields()` converts that to `null`.
-- **Chat re-validation** passes `original_request_text` so semantic checks (deadline, implausible price, etc.) run on every turn, not just the first.
+- **Country normalisation** — `_normalize_fields()` maps full country names to ISO 3166-1 alpha-2 codes (e.g. `"Germany"` → `"DE"`) for both `country` and `delivery_countries`.
+- **Chat trigger** — chat mode is only entered when a structural required field is missing (`quantity`, `category_l1`, `category_l2`, `delivery_countries`). Semantic issues (contradictions, implausible prices, past deadlines) are detected and returned but do NOT block the flow. This is enforced in `validate_request()`: `valid` is based on `struct_issues` only, not `sem_issues`.
+- **Rate limit handling** — `/parse` catches `groq.RateLimitError` and returns HTTP 429 with a readable message instead of a 500.
+- **`/parse` response** — returns `{ request_json, field_provenance, inference_notes }`. In the frontend, `request_json` goes into `devData.parsed` and `{ field_provenance, inference_notes }` goes into `devData.provenance` (separate slot). Visible via the "Provenance / Notes" button in the dev panel. Not shown in the main UI.
 
 ### What Still Needs to Be Built
 1. **Real processing engine** — replace the `/process` stub with actual logic:

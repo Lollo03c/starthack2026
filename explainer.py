@@ -3,7 +3,7 @@ import os
 
 from groq import Groq
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "qwen/qwen3-32b"
 
 _client = None
 

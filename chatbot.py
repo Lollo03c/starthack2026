@@ -1,11 +1,16 @@
 import json
 import os
+import sys
+from pathlib import Path
 
 from groq import Groq
 
 from validation import validate_request
 
-MODEL = "llama-3.3-70b-versatile"
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+from extract_request import _normalize_fields  # noqa: E402
+
+MODEL = "qwen/qwen3-32b"
 
 _client = None
 
@@ -45,7 +50,7 @@ Set "resolved": true only if you believe ALL outstanding issues are now addresse
 The server will verify this — your resolved claim may be overridden."""
 
 
-def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], original_request_text: str = "") -> dict:
+def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], original_request_text: str = "", field_provenance: dict | None = None) -> dict:
     issues_summary = "\n".join(
         f"- [{i.get('issue_id', '?')}] {i.get('field', '?')}: {i.get('description', '')}"
         for i in issues
@@ -79,9 +84,13 @@ def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], 
         "unit_of_measure", "esg_requirement", "data_residency_constraint",
     }
     updated_request = dict(request_json)
+    updated_provenance = dict(field_provenance or {})
     for k, v in field_updates.items():
         if k in allowed or k in updated_request:
             updated_request[k] = v
+            updated_provenance[k] = "user_stated"
+
+    _normalize_fields(updated_request)
 
     # Server-side re-validation overrides LLM's resolved claim
     valid, remaining_issues = validate_request(updated_request, original_request_text)
@@ -95,6 +104,7 @@ def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], 
     return {
         "reply": reply,
         "updated_request_json": updated_request,
+        "updated_field_provenance": updated_provenance,
         "remaining_issues": remaining_issues,
         "resolved": valid,
     }

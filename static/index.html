@@ -329,6 +329,10 @@
     class="bg-gray-800 hover:bg-gray-700 text-white text-xs font-mono px-3 py-1.5 rounded-lg shadow opacity-70 hover:opacity-100 transition">
     { } Output JSON
   </button>
+  <button onclick="showDevModal('provenance')"
+    class="bg-gray-800 hover:bg-gray-700 text-white text-xs font-mono px-3 py-1.5 rounded-lg shadow opacity-70 hover:opacity-100 transition">
+    { } Provenance / Notes
+  </button>
 </div>
 
 <!-- Dev modal -->
@@ -344,7 +348,7 @@
 
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
-  const devData = { parsed: null, output: null };
+  const devData = { parsed: null, output: null, provenance: null };
   let loadedOutput = null;
   let loadedRequestText = null;
 
@@ -400,8 +404,9 @@
 
   // ── Dev modal ─────────────────────────────────────────────────────────────
   function showDevModal(type) {
-    const data = type === 'parsed' ? devData.parsed : devData.output;
-    $('dev-modal-title').textContent = type === 'parsed' ? 'Parsed Request JSON' : 'Output JSON';
+    const titles = { parsed: 'Parsed Request JSON', output: 'Output JSON', provenance: 'Field Provenance & Inference Notes' };
+    const data = devData[type];
+    $('dev-modal-title').textContent = titles[type] || type;
     $('dev-modal-content').textContent = data ? JSON.stringify(data, null, 2) : '(no data yet)';
     $('dev-modal').classList.remove('hidden');
   }
@@ -834,8 +839,9 @@
         const err = await parseRes.json().catch(() => ({ detail: parseRes.statusText }));
         throw new Error(err.detail || parseRes.statusText);
       }
-      const { request_json } = await parseRes.json();
+      const { request_json, field_provenance, inference_notes } = await parseRes.json();
       devData.parsed = request_json;
+      devData.provenance = { field_provenance, inference_notes };
 
       // 3. /validate
       updateLoadingStatus('Checking your request…');
@@ -885,6 +891,7 @@
 
       devData.parsed = data.request_json;
       devData.output = data.output_json;
+      devData.provenance = null; // example endpoint does not return provenance
 
       // Also hit /explain for the example
       updateLoadingStatus('Generating AI explanation…');

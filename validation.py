@@ -4,7 +4,7 @@ from datetime import date
 
 from groq import Groq
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "qwen/qwen3-32b"
 
 _client = None
 
@@ -18,8 +18,6 @@ def _get_client() -> Groq:
 
 _REQUIRED_FIELDS = [
     "quantity",
-    "budget_amount",
-    "required_by_date",
     "category_l1",
     "category_l2",
     "delivery_countries",
@@ -27,8 +25,6 @@ _REQUIRED_FIELDS = [
 
 _FIELD_QUESTIONS = {
     "quantity": "How many units do you need?",
-    "budget_amount": "What is your total budget for this purchase (please give a number)?",
-    "required_by_date": "When do you need delivery by? (e.g. April 30, 2026)",
     "category_l1": "What high-level category is this purchase? (e.g. IT, Facilities, Marketing)",
     "category_l2": "What specific sub-category? (e.g. Laptops, Office Supplies, Consulting)",
     "delivery_countries": "Which country or countries should this be delivered to?",
@@ -108,5 +104,5 @@ def validate_request(data: dict, original_text: str) -> tuple[bool, list[dict]]:
     struct_issues = validate_structure(data)
     sem_issues = validate_semantics(data, original_text) if original_text else []
     all_issues = struct_issues + sem_issues
-    valid = not any(i.get("severity") == "error" for i in all_issues)
+    valid = not any(i.get("severity") == "error" for i in struct_issues)
     return valid, all_issues

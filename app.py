@@ -55,7 +55,13 @@ def parse(body: ParseRequest):
         result = parse_request_text(body.request_text, body.metadata)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
-    return {"request_json": result}
+    except Exception as e:
+        if "rate_limit_exceeded" in str(e) or "429" in str(e):
+            raise HTTPException(status_code=429, detail="Groq API rate limit reached. Please wait a few minutes before trying again.")
+        raise HTTPException(status_code=500, detail=str(e))
+    field_provenance = result.pop("field_provenance", {})
+    inference_notes = result.pop("inference_notes", {})
+    return {"request_json": result, "field_provenance": field_provenance, "inference_notes": inference_notes}
 
 
 class ProcessRequest(BaseModel):
@@ -103,10 +109,11 @@ class ChatRequest(BaseModel):
     request_json: dict
     issues: list
     original_request_text: str = ""
+    field_provenance: dict = {}
 
 
 @app.post("/chat")
 def chat_endpoint(body: ChatRequest):
     from chatbot import run_chat_turn  # noqa: PLC0415
 
-    return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text)
+    return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text, body.field_provenance)
