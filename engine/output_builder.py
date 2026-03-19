@@ -460,6 +460,7 @@ def _apply_escalation_overrides(escalations: list[Escalation], overrides: dict) 
     _override_map = {
         "threshold_exceeded": "ER-003",
         "restricted_supplier": "ER-002",
+        "insufficient_quotes": "ER-004",
         "single_supplier_risk": "ER-006",
         "data_residency": "ER-005",
         "usd_compliance": "ER-008",

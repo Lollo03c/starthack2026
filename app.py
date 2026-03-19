@@ -133,3 +133,23 @@ def chat_endpoint(body: ChatRequest):
     from chatbot import run_chat_turn  # noqa: PLC0415
 
     return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text, body.field_provenance, body.supplier_shortlist)
+
+
+class ResultsChatRequest(BaseModel):
+    messages: list
+    output_json: dict
+    request_json: dict
+
+
+@app.post("/results-chat")
+def results_chat_endpoint(body: ResultsChatRequest):
+    import logging
+    from results_chat import run_results_chat  # noqa: PLC0415
+
+    try:
+        return run_results_chat(body.messages, body.output_json, body.request_json)
+    except Exception as e:
+        logging.getLogger(__name__).error("results-chat error: %s", e, exc_info=True)
+        if "rate_limit_exceeded" in str(e) or "429" in str(e):
+            raise HTTPException(status_code=429, detail="Groq API rate limit reached. Please wait a moment.")
+        raise HTTPException(status_code=500, detail=f"Results chat failed: {e}")

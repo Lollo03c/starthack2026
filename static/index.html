@@ -343,6 +343,7 @@
   let originalRequestText = '';
   let currentFieldProvenance = null;
   let isRefinementAfterOutput = false;
+  let isResultsChat = false;
   let currentSupplierShortlist = [];
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
@@ -461,6 +462,7 @@
     originalRequestText = '';
     currentFieldProvenance = null;
     isRefinementAfterOutput = false;
+    isResultsChat = false;
     currentSupplierShortlist = [];
 
     const chatPhase = $('chat-phase');
@@ -560,8 +562,8 @@
     input.value = '';
     input.style.height = 'auto';
 
-    // Keyword auto-submit when already resolved
-    if (conversationResolved) {
+    // Keyword auto-submit when already resolved (only in pre-results chat)
+    if (conversationResolved && !isResultsChat) {
       const lower = text.toLowerCase();
       const submitKeywords = ['yes', 'submit', 'go ahead', 'proceed', 'ok', 'okay', 'sure', 'yep', 'yeah', 're-submit', 'resubmit'];
       if (submitKeywords.some(k => lower.includes(k))) {
@@ -582,6 +584,93 @@
     $('convo-send-btn').disabled = true;
 
     try {
+      // ── Results chat mode: Q&A + escalation resolution ──────────────────
+      if (isResultsChat) {
+        const resultsChatBody = JSON.stringify({
+          messages: conversationMessages,
+          output_json: loadedOutput,
+          request_json: currentRequestJson,
+        });
+
+        let res = await fetch('/results-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: resultsChatBody,
+        });
+
+        // Retry once on rate limit (429) after a short delay
+        if (res.status === 429) {
+          await sleep(3000);
+          res = await fetch('/results-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: resultsChatBody,
+          });
+        }
+
+        hideTypingIndicator();
+        $('convo-send-btn').disabled = false;
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(err.detail || res.statusText);
+        }
+
+        const data = await res.json();
+
+        // Display messages with natural delays
+        for (let i = 0; i < data.messages.length; i++) {
+          if (i > 0) {
+            showTypingIndicator();
+            await sleep(600);
+            hideTypingIndicator();
+          }
+          appendMessage('assistant', data.messages[i]);
+          conversationMessages.push({ role: 'assistant', content: data.messages[i] });
+        }
+
+        // Handle field updates (escalation resolution in results chat)
+        if (data.has_field_updates) {
+          currentRequestJson = data.updated_request_json;
+          devData.parsed = currentRequestJson;
+
+          // Re-process silently to get updated output
+          $('recheck-indicator').classList.remove('hidden');
+          try {
+            const proc = await fetch('/process', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ request_json: currentRequestJson }),
+            });
+            if (proc.ok) {
+              const { output_json } = await proc.json();
+              loadedOutput = output_json;
+              devData.output = output_json;
+
+              const freshEscs = output_json.escalations || [];
+              if (freshEscs.length === 0) {
+                const msg = 'Policy recheck complete — all escalations have been cleared. Your request is ready to proceed.';
+                appendMessage('assistant', msg);
+                conversationMessages.push({ role: 'assistant', content: msg });
+              } else {
+                const blocking = freshEscs.filter(e => e.blocking);
+                if (blocking.length === 0) {
+                  const msg = `All blocking escalations resolved. ${freshEscs.length} non-blocking notice${freshEscs.length === 1 ? '' : 's'} remain.`;
+                  appendMessage('assistant', msg);
+                  conversationMessages.push({ role: 'assistant', content: msg });
+                }
+              }
+            }
+          } catch (_) { /* silent */ }
+          finally {
+            $('recheck-indicator').classList.add('hidden');
+          }
+        }
+
+        return;
+      }
+
+      // ── Normal validation / escalation chat mode ────────────────────────
       const chatBody = {
         messages: conversationMessages,
         request_json: currentRequestJson,
@@ -670,20 +759,29 @@
         }
       }
     } catch (e) {
+      console.error('Chat error:', e);
       hideTypingIndicator();
       $('convo-send-btn').disabled = false;
-      appendMessage('assistant', 'Sorry, something went wrong. Please try again.');
+      appendMessage('assistant', 'Sorry, something went wrong: ' + (e.message || 'Unknown error') + '. Please try again.');
     }
   }
 
   async function proceedToProcess(requestJson, requestText) {
-    $('convo-phase').classList.add('hidden');
-    $('convo-phase').classList.remove('fade-in');
+    // Ensure convo-phase is visible (for happy path where no validation chat happened)
+    const convoPhase = $('convo-phase');
+    if (convoPhase.classList.contains('hidden')) {
+      convoPhase.classList.remove('hidden');
+      convoPhase.classList.add('fade-in');
+      conversationMessages = [{ role: 'user', content: originalRequestText }];
+      $('convo-messages').innerHTML = '';
+      appendMessage('user', originalRequestText);
+    }
 
-    resetResults();
-    showLoading('Evaluating suppliers and policies…');
+    $('convo-submit-bar').classList.add('hidden');
+    showTypingIndicator();
 
     try {
+      // 1. Run engine
       const processRes = await fetch('/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -694,28 +792,51 @@
         throw new Error(err.detail || processRes.statusText);
       }
       const { output_json, request_json: returnedReq } = await processRes.json();
+      loadedOutput = output_json;
       devData.output = output_json;
+      currentRequestJson = returnedReq || requestJson;
+      devData.parsed = currentRequestJson;
 
-      updateLoadingStatus('Generating AI explanation…');
-      const explainRes = await fetch('/explain', {
+      // 2. Get results presentation from LLM
+      const chatRes = await fetch('/results-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output_json, request_text: requestText }),
+        body: JSON.stringify({
+          messages: [],
+          output_json: output_json,
+          request_json: currentRequestJson,
+        }),
       });
-      if (!explainRes.ok) {
-        const err = await explainRes.json().catch(() => ({ detail: explainRes.statusText }));
-        throw new Error(err.detail || explainRes.statusText);
-      }
-      const { explanation } = await explainRes.json();
 
-      hideLoading();
-      renderDataSections(output_json, returnedReq || requestJson);
-      await transitionToResults();
-      await renderExplanationAnimated(explanation);
+      hideTypingIndicator();
+
+      if (!chatRes.ok) {
+        const err = await chatRes.json().catch(() => ({ detail: chatRes.statusText }));
+        throw new Error(err.detail || chatRes.statusText);
+      }
+      const data = await chatRes.json();
+
+      // 3. Display messages with natural delays
+      for (let i = 0; i < data.messages.length; i++) {
+        if (i > 0) {
+          showTypingIndicator();
+          await sleep(800);
+          hideTypingIndicator();
+        }
+        appendMessage('assistant', data.messages[i]);
+        conversationMessages.push({ role: 'assistant', content: data.messages[i] });
+      }
+
+      // 4. Enter results chat mode
+      isResultsChat = true;
+      isRefinementAfterOutput = false;
+      conversationResolved = false;
+      currentSupplierShortlist = output_json.supplier_shortlist || [];
+      setTimeout(() => $('convo-input').focus(), 100);
 
     } catch (e) {
-      hideLoading();
-      alert('Error: ' + e.message);
+      hideTypingIndicator();
+      appendMessage('assistant', 'Sorry, something went wrong processing your request. Please try again.');
     }
   }
 
@@ -1157,8 +1278,11 @@
       const altText = alts.length > 0 ? `\n• **Switch to an alternative** (e.g. ${alts.join(', ')})` : '';
       return `Options:\n• **Override the restriction** with justification${altText}\n• **Remove the supplier preference** entirely`;
     }
-    if (trigger.includes('budget') || trigger.includes('insufficient')) {
+    if (rule === 'ER-001' || trigger.includes('budget') || trigger.includes('cannot cover')) {
       return 'Options:\n• **Increase the budget** — tell me the new amount\n• **Reduce the quantity** — tell me the new quantity';
+    }
+    if (rule === 'ER-004' || trigger.includes('quote') || trigger.includes('compliant supplier')) {
+      return 'Options:\n• **Acknowledge and proceed** with available suppliers (override)\n• **Request a deviation approval** from Head of Category';
     }
     if (rule === 'ER-005' || trigger.includes('data residency')) {
       return 'Options:\n• **Remove the data residency requirement** if it\'s not strictly needed\n• **Acknowledge and proceed** (risk accepted)';
@@ -1182,15 +1306,26 @@
       if (nonBlocking.length > 0) {
         msg += ` There ${nonBlocking.length === 1 ? 'is' : 'are'} also **${nonBlocking.length} non-blocking notice${nonBlocking.length > 1 ? 's' : ''}**.`;
       }
-      msg += '\n\nLet\'s tackle the first blocking issue:\n\n';
-      const first = blocking[0];
-      msg += `**${first.rule} — ${first.escalation_id}:** ${first.trigger}\n\n`;
-      msg += getEscalationOptions(first);
+      msg += '\n\n';
+      blocking.forEach((esc, i) => {
+        msg += `**${i + 1}. ${esc.rule} — ${esc.escalation_id}:** ${esc.trigger}\n\n`;
+        msg += getEscalationOptions(esc) + '\n\n';
+      });
+      if (nonBlocking.length > 0) {
+        msg += '**Non-blocking notices:**\n\n';
+        nonBlocking.forEach((esc, i) => {
+          msg += `${i + 1}. **${esc.rule} — ${esc.escalation_id}:** ${esc.trigger}\n\n`;
+          msg += getEscalationOptions(esc) + '\n\n';
+        });
+      }
+      msg += 'Please tell me how you\'d like to resolve each issue.';
     } else {
-      msg = `There ${nonBlocking.length === 1 ? 'is' : 'are'} **${nonBlocking.length} non-blocking notice${nonBlocking.length > 1 ? 's' : ''}**.\n\n`;
-      const first = nonBlocking[0];
-      msg += `**${first.rule} — ${first.escalation_id}:** ${first.trigger}\n\n`;
-      msg += getEscalationOptions(first);
+      msg = `There ${nonBlocking.length === 1 ? 'is' : 'are'} **${nonBlocking.length} non-blocking notice${nonBlocking.length > 1 ? 's' : ''}**:\n\n`;
+      nonBlocking.forEach((esc, i) => {
+        msg += `${i + 1}. **${esc.rule} — ${esc.escalation_id}:** ${esc.trigger}\n\n`;
+        msg += getEscalationOptions(esc) + '\n\n';
+      });
+      msg += 'You can acknowledge these and proceed, or tell me how you\'d like to address them.';
     }
     return msg;
   }
@@ -1336,27 +1471,51 @@
       devData.parsed = data.request_json;
       devData.output = data.output_json;
       devData.provenance = null;
-
-      updateLoadingStatus('Generating AI explanation…');
-      const explainRes = await fetch('/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output_json: data.output_json }),
-      });
-      let explanation = null;
-      if (explainRes.ok) {
-        const explainData = await explainRes.json();
-        explanation = explainData.explanation;
-      }
+      loadedOutput = data.output_json;
+      currentRequestJson = data.request_json;
+      originalRequestText = 'Example request';
 
       hideLoading();
-      renderDataSections(data.output_json, data.request_json);
-      await transitionToResults();
-      if (explanation) {
-        await renderExplanationAnimated(explanation);
+
+      // Present example results in chat
+      const convoPhase = $('convo-phase');
+      convoPhase.classList.remove('hidden');
+      convoPhase.classList.add('fade-in');
+      conversationMessages = [{ role: 'user', content: 'Load example request' }];
+      $('convo-messages').innerHTML = '';
+      appendMessage('user', 'Load example request');
+      showTypingIndicator();
+
+      const chatRes = await fetch('/results-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [],
+          output_json: data.output_json,
+          request_json: data.request_json,
+        }),
+      });
+
+      hideTypingIndicator();
+
+      if (chatRes.ok) {
+        const chatData = await chatRes.json();
+        for (let i = 0; i < chatData.messages.length; i++) {
+          if (i > 0) {
+            showTypingIndicator();
+            await sleep(800);
+            hideTypingIndicator();
+          }
+          appendMessage('assistant', chatData.messages[i]);
+          conversationMessages.push({ role: 'assistant', content: chatData.messages[i] });
+        }
       } else {
-        $('explanation-container').innerHTML = '<p class="text-gray-400 italic text-xs">Explanation unavailable.</p>';
+        appendMessage('assistant', 'Example loaded but explanation could not be generated.');
       }
+
+      isResultsChat = true;
+      setTimeout(() => $('convo-input').focus(), 100);
+
     } catch (e) {
       hideLoading();
       chatPhase.style.display = '';
@@ -1388,48 +1547,8 @@
   });
 
   async function resubmitAfterRefinement() {
-    $('convo-phase').classList.add('hidden');
-    $('convo-phase').classList.remove('fade-in');
-    resetResults();
-    showLoading('Re-evaluating suppliers and policies…');
-    try {
-      const processRes = await fetch('/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_json: currentRequestJson }),
-      });
-      if (!processRes.ok) {
-        const err = await processRes.json().catch(() => ({ detail: processRes.statusText }));
-        throw new Error(err.detail || processRes.statusText);
-      }
-      const { output_json, request_json: returnedReq } = await processRes.json();
-      devData.output = output_json;
-      devData.parsed = returnedReq || currentRequestJson;
-
-      updateLoadingStatus('Generating AI explanation…');
-      const explainRes = await fetch('/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output_json }),
-      });
-      if (!explainRes.ok) {
-        const err = await explainRes.json().catch(() => ({ detail: explainRes.statusText }));
-        throw new Error(err.detail || explainRes.statusText);
-      }
-      const { explanation } = await explainRes.json();
-
-      // Reset refinement flag — new output page starts fresh
-      isRefinementAfterOutput = false;
-      currentSupplierShortlist = [];
-
-      hideLoading();
-      renderDataSections(output_json, returnedReq || currentRequestJson);
-      await transitionToResults();
-      await renderExplanationAnimated(explanation);
-    } catch (e) {
-      hideLoading();
-      alert('Error: ' + e.message);
-    }
+    // Re-process and present updated results in chat (no page transition)
+    await proceedToProcess(currentRequestJson, originalRequestText);
   }
 
   // ── New Request ───────────────────────────────────────────────────────────
