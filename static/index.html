@@ -1409,11 +1409,15 @@
 
   function buildStatusBannerHtml(rec) {
     if (!rec) return '';
-    const canProceed = rec.status === 'can_proceed';
-    const bgClass = canProceed ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200';
-    const icon = canProceed ? '✅' : '🚫';
-    const title = canProceed ? 'Can Proceed' : 'Cannot Proceed';
-    const titleColor = canProceed ? 'text-green-800' : 'text-red-800';
+    const status = rec.status;
+    const canProceed = status === 'can_proceed' || status === 'proceed';
+    const withConditions = status === 'proceed_with_conditions';
+    const bgClass = canProceed ? 'bg-green-50 border border-green-200'
+                  : withConditions ? 'bg-amber-50 border border-amber-200'
+                  : 'bg-red-50 border border-red-200';
+    const icon = canProceed ? '✅' : withConditions ? '⚠️' : '🚫';
+    const title = canProceed ? 'Can Proceed' : withConditions ? 'Proceed with Conditions' : 'Cannot Proceed';
+    const titleColor = canProceed ? 'text-green-800' : withConditions ? 'text-amber-800' : 'text-red-800';
     return `<div class="rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm ${bgClass}">
       <span class="text-2xl">${icon}</span>
       <div>

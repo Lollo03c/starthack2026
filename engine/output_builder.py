@@ -516,7 +516,7 @@ def _build_recommendation(
     if high_issues or non_blocking:
         status = "proceed_with_conditions"
     else:
-        status = "proceed"
+        status = "can_proceed"
 
     top = scored[0]
     return {
