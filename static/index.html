@@ -436,6 +436,32 @@
   let isRefinementAfterOutput = false;
   let isResultsChat = false;
   let currentSupplierShortlist = [];
+  let activeRankingMetric = 'overall';
+  let isRankingPanelOpen = false;
+  let explicitShipSupplierName = null;
+
+  const RANKING_METRICS = {
+    overall: {
+      label: 'Best overall',
+      shortLabel: 'Overall',
+      helper: 'Uses our composite score across all evaluation factors.',
+    },
+    cheaper: {
+      label: 'Cheaper',
+      shortLabel: 'Cheaper',
+      helper: 'Ranks suppliers by lowest total price first.',
+    },
+    fastest: {
+      label: 'Fastest',
+      shortLabel: 'Fastest',
+      helper: 'Ranks suppliers by earliest deliverable lead time.',
+    },
+    lowest_risk: {
+      label: 'Lowest risk',
+      shortLabel: 'Lowest risk',
+      helper: 'Ranks suppliers by lowest operational risk score.',
+    },
+  };
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -508,6 +534,7 @@
     const parent = toggle.closest('[data-analysis-section]') || toggle.closest('section') || toggle.parentElement?.parentElement;
     const panel = parent?.querySelector('[data-ranking-panel]');
     if (!panel) return;
+    isRankingPanelOpen = panel.classList.contains('hidden');
     panel.classList.toggle('hidden');
     toggle.textContent = panel.classList.contains('hidden') ? 'Show ranking' : 'Hide ranking';
   });
@@ -518,6 +545,16 @@
     if (!target) return;
     setActiveAnalysisIndex(jump.dataset.analysisJump);
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.addEventListener('click', e => {
+    const metricBtn = e.target.closest('[data-ranking-metric]');
+    if (!metricBtn) return;
+    const nextMetric = metricBtn.dataset.rankingMetric;
+    if (!RANKING_METRICS[nextMetric] || nextMetric === activeRankingMetric) return;
+    activeRankingMetric = nextMetric;
+    syncActiveShortlist();
+    refreshOutputPanel(loadedOutput, currentRequestJson);
+    checkAndShowForwardButton(loadedOutput);
   });
 
   // ── Phase transitions ─────────────────────────────────────────────────────
@@ -568,6 +605,9 @@
     isRefinementAfterOutput = false;
     isResultsChat = false;
     currentSupplierShortlist = [];
+    activeRankingMetric = 'overall';
+    isRankingPanelOpen = false;
+    explicitShipSupplierName = null;
 
     const chatPhase = $('chat-phase');
     chatPhase.style.display = '';
@@ -727,6 +767,9 @@
         }
 
         const data = await res.json();
+        if (data.ship_supplier_selection?.status === 'valid') {
+          explicitShipSupplierName = data.ship_supplier_selection.supplier_name || null;
+        }
 
         // Display messages with natural delays
         for (let i = 0; i < data.messages.length; i++) {
@@ -762,6 +805,7 @@
               const { output_json } = await proc.json();
               loadedOutput = output_json;
               devData.output = output_json;
+              syncActiveShortlist();
               refreshOutputPanel(output_json, currentRequestJson);
 
               const freshEscs = output_json.escalations || [];
@@ -846,6 +890,7 @@
             const { output_json } = await proc.json();
             loadedOutput = output_json;
             devData.output = output_json;
+            syncActiveShortlist();
             refreshOutputPanel(output_json, currentRequestJson);
             const freshEscs = output_json.escalations || [];
 
@@ -919,6 +964,7 @@
       devData.output = output_json;
       currentRequestJson = returnedReq || requestJson;
       devData.parsed = currentRequestJson;
+      syncActiveShortlist();
 
       // 2. Activate split screen with output panel
       activateSplitScreen(output_json, currentRequestJson);
@@ -963,7 +1009,7 @@
       isResultsChat = true;
       isRefinementAfterOutput = false;
       conversationResolved = false;
-      currentSupplierShortlist = output_json.supplier_shortlist || [];
+      syncActiveShortlist();
       setTimeout(() => getActiveInput().focus(), 100);
 
     } catch (e) {
@@ -1146,6 +1192,114 @@
     </div>`;
   }
 
+  function metricSortValue(supplier, metric) {
+    if (metric === 'cheaper') return Number(supplier.total_price_eur ?? Number.POSITIVE_INFINITY);
+    if (metric === 'fastest') return Number(supplier.effective_lead_time_days ?? supplier.standard_lead_time_days ?? Number.POSITIVE_INFINITY);
+    if (metric === 'lowest_risk') return Number(supplier.risk_score ?? Number.POSITIVE_INFINITY);
+    return Number(-(supplier.composite_score ?? 0));
+  }
+
+  function compareSuppliersByMetric(a, b, metric) {
+    const aValue = metricSortValue(a, metric);
+    const bValue = metricSortValue(b, metric);
+    if (aValue !== bValue) return aValue - bValue;
+
+    const compositeDelta = Number(b.composite_score ?? 0) - Number(a.composite_score ?? 0);
+    if (compositeDelta !== 0) return compositeDelta;
+
+    const priceDelta = Number(a.total_price_eur ?? Number.POSITIVE_INFINITY) - Number(b.total_price_eur ?? Number.POSITIVE_INFINITY);
+    if (priceDelta !== 0) return priceDelta;
+
+    return String(a.supplier_name || '').localeCompare(String(b.supplier_name || ''));
+  }
+
+  function getRankedShortlistForMetric(shortlist, metric = activeRankingMetric) {
+    return [...(shortlist || [])]
+      .sort((a, b) => compareSuppliersByMetric(a, b, metric))
+      .map((supplier, idx) => ({
+        ...supplier,
+        ui_rank: idx + 1,
+      }));
+  }
+
+  function getActiveRankedOutput(out) {
+    if (!out) return null;
+    const rankedShortlist = getRankedShortlistForMetric(out.supplier_shortlist || [], activeRankingMetric);
+    const top = rankedShortlist[0] || null;
+    const officialTop = (out.supplier_shortlist || [])[0] || null;
+    return {
+      ...out,
+      ui_active_metric: activeRankingMetric,
+      ui_metric_meta: RANKING_METRICS[activeRankingMetric] || RANKING_METRICS.overall,
+      ui_ranked_shortlist: rankedShortlist,
+      ui_top_supplier: top,
+      ui_official_top_supplier: officialTop,
+    };
+  }
+
+  function syncActiveShortlist() {
+    currentSupplierShortlist = getRankedShortlistForMetric(
+      (loadedOutput || {}).supplier_shortlist || [],
+      activeRankingMetric,
+    );
+  }
+
+  function describeMetricReason(top, metric) {
+    if (!top) return '';
+    if (metric === 'cheaper') {
+      return `Lowest total price in the shortlist at EUR ${fmt(top.total_price_eur)}.`;
+    }
+    if (metric === 'fastest') {
+      const lead = top.effective_lead_time_days ?? top.standard_lead_time_days;
+      return `Earliest available service start with an effective lead time of ${lead ?? '—'} days.`;
+    }
+    if (metric === 'lowest_risk') {
+      return `Lowest risk score in the shortlist at ${top.risk_score ?? '—'}.`;
+    }
+    return `Highest composite score at ${(top.composite_score ?? 0).toFixed(3)} across price, quality, risk, ESG, and timing.`;
+  }
+
+  function renderRankingSwitcher(out) {
+    const ranked = getActiveRankedOutput(out);
+    if (!ranked || !ranked.ui_top_supplier) {
+      return '';
+    }
+
+    const top = ranked.ui_top_supplier;
+    const officialTop = ranked.ui_official_top_supplier;
+    const metricMeta = ranked.ui_metric_meta;
+    const helper = activeRankingMetric === 'overall'
+      ? metricMeta.helper
+      : `${metricMeta.helper} Default engine recommendation remains ${escapeHtml(officialTop?.supplier_name || '—')} by overall score.`;
+
+    return `
+      <div class="flex flex-col gap-3 p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Shipping Preference</div>
+            <div class="mt-1 text-sm font-semibold text-gray-900">${escapeHtml(top.supplier_name)}</div>
+            <p class="mt-1 text-xs leading-relaxed text-gray-500">${helper}</p>
+          </div>
+          <div class="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+            ${escapeHtml(metricMeta.shortLabel)}
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          ${Object.entries(RANKING_METRICS).map(([key, meta]) => `
+            <button
+              type="button"
+              data-ranking-metric="${key}"
+              class="rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                key === activeRankingMetric
+                  ? 'border-blue-700 bg-blue-700 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:text-blue-700'
+              }"
+            >${escapeHtml(meta.shortLabel)}</button>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+
   function renderAnalysisIndex(sections) {
     const container = $('analysis-index-links');
     if (!container) return;
@@ -1204,66 +1358,82 @@
 
   function renderRankingTable(shortlist, hidden = false) {
     if (!shortlist || shortlist.length === 0) return '';
-    return `<div class="${hidden ? 'hidden ' : ''}mt-4 overflow-x-auto rounded-xl border border-gray-200" data-ranking-panel>
-      <table class="w-full text-xs border-collapse bg-white">
-        <thead>
-          <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
-            <th class="px-3 py-2.5 font-semibold">#</th>
-            <th class="px-3 py-2.5 font-semibold">Supplier</th>
-            <th class="px-3 py-2.5 font-semibold text-right">Total €</th>
-            <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
-            <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
-            <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
-            <th class="px-3 py-2.5 font-semibold text-center">Lead</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          ${shortlist.map((s, idx) => `<tr class="${idx === 0 ? 'bg-blue-50' : 'bg-white'}">
-            <td class="px-3 py-2.5 font-bold text-gray-400">${s.rank}</td>
-            <td class="px-3 py-2.5">
-              <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
-              <div class="text-gray-400 text-[11px]">${s.preferred ? 'Preferred' : 'Standard'}${s.incumbent ? ' • Incumbent' : ''}</div>
-            </td>
-            <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
-            <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
-            <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
-            <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
-            <td class="px-3 py-2.5 text-center">${s.standard_lead_time_days ?? '—'}d</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
+    const shouldHide = hidden && !isRankingPanelOpen;
+    return `<div class="${shouldHide ? 'hidden ' : ''}mt-4" data-ranking-panel>
+      <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        ${renderRankingSwitcher(loadedOutput)}
+        <div class="border-t border-gray-200 overflow-x-auto">
+          <table class="w-full text-xs border-collapse bg-white">
+            <thead>
+              <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
+                <th class="px-3 py-2.5 font-semibold">#</th>
+                <th class="px-3 py-2.5 font-semibold">Supplier</th>
+                <th class="px-3 py-2.5 font-semibold text-right">Total €</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
+                <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Lead</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              ${shortlist.map((s, idx) => `<tr class="${idx === 0 ? 'bg-blue-50' : 'bg-white'}">
+                <td class="px-3 py-2.5 font-bold text-gray-400">${s.ui_rank ?? s.rank}</td>
+                <td class="px-3 py-2.5">
+                  <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
+                  <div class="text-gray-400 text-[11px]">${s.preferred ? 'Preferred' : 'Standard'}${s.incumbent ? ' • Incumbent' : ''}</div>
+                </td>
+                <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
+                <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
+                <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
+                <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
+                <td class="px-3 py-2.5 text-center">${s.effective_lead_time_days ?? s.standard_lead_time_days ?? '—'}d</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>`;
   }
 
   function renderTopRecommendationVisual(out) {
-    const top = (out.supplier_shortlist || [])[0];
+    const ranked = getActiveRankedOutput(out);
+    const top = ranked?.ui_top_supplier;
     if (!top) return '';
+    const officialTop = ranked.ui_official_top_supplier;
+    const metricMeta = ranked.ui_metric_meta;
+    const rankingHelper = activeRankingMetric === 'overall'
+      ? 'Default recommendation from the sourcing engine.'
+      : `Viewing an alternate ranking. Default engine recommendation remains ${officialTop?.supplier_name || '—'} by overall score.`;
+    const note = describeMetricReason(top, activeRankingMetric);
 
     return `<div class="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Top Recommendation</div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Top Recommendation · ${escapeHtml(metricMeta.shortLabel)}</div>
           <h4 class="mt-1 text-lg font-semibold text-gray-900">${escapeHtml(top.supplier_name)}</h4>
-          <p class="mt-1 text-sm text-gray-600">${escapeHtml(top.recommendation_note || 'Best-ranked supplier based on the current sourcing outcome.')}</p>
+          <p class="mt-1 text-sm text-gray-600">${escapeHtml(note)}</p>
+          <p class="mt-1 text-xs text-gray-500">${escapeHtml(rankingHelper)}</p>
+          ${top.recommendation_note ? `<p class="mt-2 text-xs text-gray-500">${escapeHtml(top.recommendation_note)}</p>` : ''}
         </div>
         <button type="button" data-ranking-toggle class="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-500 hover:text-blue-900">
-          Show ranking
+          ${isRankingPanelOpen ? 'Hide ranking' : 'Show ranking'}
         </button>
       </div>
       <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         ${renderMetric('Total Price', `EUR ${fmt(top.total_price_eur)}`)}
         ${renderMetric('Unit Price', `EUR ${fmt(top.unit_price_eur)}`)}
+        ${renderMetric('Composite Score', (top.composite_score ?? 0).toFixed(3), 'text-blue-700')}
         ${renderMetric('Quality', top.quality_score ?? '—', scoreColor(top.quality_score))}
         ${renderMetric('Risk', top.risk_score ?? '—', scoreColor(top.risk_score, true))}
         ${renderMetric('ESG', top.esg_score ?? '—', scoreColor(top.esg_score))}
-        ${renderMetric('Lead Time', `${top.standard_lead_time_days ?? '—'} days`)}
+        ${renderMetric('Lead Time', `${top.effective_lead_time_days ?? top.standard_lead_time_days ?? '—'} days`)}
       </div>
       <div class="mt-3 flex flex-wrap gap-2 text-xs">
         ${top.preferred ? '<span class="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-800">Preferred supplier</span>' : ''}
         ${top.incumbent ? '<span class="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-800">Incumbent</span>' : ''}
         ${top.policy_compliant ? '<span class="rounded-full bg-green-100 px-2.5 py-1 font-semibold text-green-800">Policy compliant</span>' : '<span class="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-800">Not compliant</span>'}
       </div>
-      ${renderRankingTable(out.supplier_shortlist || [], true)}
+      ${renderRankingTable(ranked.ui_ranked_shortlist || [], true)}
     </div>`;
   }
 
@@ -1295,7 +1465,7 @@
   }
 
   function renderAlternativesVisual(out) {
-    const shortlist = out.supplier_shortlist || [];
+    const shortlist = getActiveRankedOutput(out)?.ui_ranked_shortlist || [];
     if (shortlist.length <= 1) return '';
     const top = shortlist[0];
     const alternatives = shortlist.slice(1);
@@ -1322,12 +1492,12 @@
             return `<tr>
               <td class="px-3 py-3">
                 <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
-                <div class="text-[11px] text-gray-400">Rank ${s.rank}${s.preferred ? ' • Preferred' : ''}</div>
+                <div class="text-[11px] text-gray-400">Rank ${s.ui_rank ?? s.rank}${s.preferred ? ' • Preferred' : ''}</div>
               </td>
               <td class="px-3 py-3 text-right font-mono ${delta <= 0 ? 'text-green-700' : 'text-orange-700'}">${deltaLabel}</td>
               <td class="px-3 py-3 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
               <td class="px-3 py-3 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
-              <td class="px-3 py-3 text-center">${s.standard_lead_time_days ?? '—'}d</td>
+              <td class="px-3 py-3 text-center">${s.effective_lead_time_days ?? s.standard_lead_time_days ?? '—'}d</td>
               <td class="px-3 py-3 text-gray-600">${escapeHtml(s.recommendation_note || tradeoff)}</td>
             </tr>`;
           }).join('')}
@@ -1436,18 +1606,50 @@
     return $('split-phase').classList.contains('hidden') ? $('recheck-indicator') : $('split-recheck-indicator');
   }
 
+  function normalizeSupplierName(name) {
+    return String(name || '').trim().toLowerCase();
+  }
+
+  function findFeasibleSupplierByName(outputJson, supplierName) {
+    const shortlist = outputJson?.supplier_shortlist || [];
+    const target = normalizeSupplierName(supplierName);
+    if (!target) return null;
+    return shortlist.find(s => normalizeSupplierName(s.supplier_name) === target) || null;
+  }
+
+  function getCanonicalShipSupplier(outputJson, requestJson = currentRequestJson) {
+    const shortlist = outputJson?.supplier_shortlist || [];
+    if (shortlist.length === 0) return null;
+
+    const mandatorySupplier = requestJson?.supplier_must_use
+      ? findFeasibleSupplierByName(outputJson, requestJson?.preferred_supplier_mentioned)
+      : null;
+    if (mandatorySupplier) return mandatorySupplier;
+
+    const explicitSupplier = explicitShipSupplierName
+      ? findFeasibleSupplierByName(outputJson, explicitShipSupplierName)
+      : null;
+    if (explicitSupplier) return explicitSupplier;
+
+    const overallTop = findFeasibleSupplierByName(
+      outputJson,
+      outputJson?.recommendation?.recommended_supplier_name,
+    );
+    return overallTop || shortlist[0] || null;
+  }
+
   // ── Forward button / success screen ──────────────────────────────────────
   function checkAndShowForwardButton(outputJson) {
-    if (document.getElementById('forward-action-btn')) return;
+    const existing = document.getElementById('forward-action-btn');
+    if (existing) existing.closest('.flex')?.remove();
 
     const escalations = outputJson?.escalations || [];
     const hasBlocking = escalations.some(e => e.blocking === true);
     const status = outputJson?.recommendation?.status;
 
     if (!hasBlocking && status !== 'cannot_proceed') {
-      const supplierName = outputJson?.recommendation?.recommended_supplier_name
-        || outputJson?.supplier_shortlist?.[0]?.supplier_name
-        || '';
+      const shipSupplier = getCanonicalShipSupplier(outputJson, currentRequestJson);
+      const supplierName = shipSupplier?.supplier_name || '';
       const container = getActiveMessageContainer();
       const wrapper = document.createElement('div');
       wrapper.className = 'flex justify-start my-3';
@@ -1455,7 +1657,7 @@
         <button id="forward-action-btn"
           onclick="showForwardScreen('${supplierName.replace(/'/g, "\\'")}')"
           class="px-5 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition shadow-sm text-sm">
-          Forward request to supplier →
+          Ship with ${supplierName} →
         </button>`;
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
@@ -1559,6 +1761,10 @@
   function refreshOutputPanel(out, req) {
     const panel = $('output-panel');
     if (!panel) return;
+    if (!out) {
+      panel.innerHTML = '';
+      return;
+    }
 
     let html = '';
 
@@ -1684,6 +1890,7 @@
     renderAssumptionsSection(out, currentFieldProvenance, devData.provenance ? devData.provenance.inference_notes : null);
     loadedOutput = out;
     loadedRequestText = (req && req.request_text) || null;
+    syncActiveShortlist();
   }
 
   // ── Escalation resolution mode ────────────────────────────────────────────
@@ -1778,7 +1985,7 @@
     }));
 
     // Capture supplier shortlist for ER-002 context
-    currentSupplierShortlist = out.supplier_shortlist || [];
+    syncActiveShortlist();
 
     // Use the request_json from the last processed output
     const outputRequestJson = devData.parsed || {};
@@ -1907,6 +2114,7 @@
       loadedOutput = data.output_json;
       currentRequestJson = data.request_json;
       originalRequestText = 'Example request';
+      syncActiveShortlist();
 
       hideLoading();
 
