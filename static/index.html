@@ -3,204 +3,276 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Procurement Decision Explainer</title>
+  <title>ChainIQ · Sourcing Intelligence</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    .prose h2 { font-size: 1.1rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.4rem; color: #1e3a5f; }
-    .prose p  { margin-bottom: 0.6rem; line-height: 1.6; }
+    /* ── Animations ───────────────────────────────────────────────── */
+    @keyframes fadeSlideDown {
+      from { opacity: 1; transform: translateY(0); }
+      to   { opacity: 0; transform: translateY(30px); }
+    }
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes pulse-dot {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40%           { opacity: 1;   transform: scale(1); }
+    }
+
+    .fade-out-down {
+      animation: fadeSlideDown 0.4s ease forwards;
+    }
+    .fade-in {
+      animation: fadeIn 0.5s ease forwards;
+    }
+    .para-animate {
+      opacity: 0;
+      animation: fadeSlideUp 0.5s ease forwards;
+    }
+
+    /* Pulsing dots loader */
+    .dot-flashing span {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #3b82f6;
+      margin: 0 3px;
+      animation: pulse-dot 1.2s infinite ease-in-out;
+    }
+    .dot-flashing span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-flashing span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* Prose styles for markdown */
+    .prose h2 { font-size: 1rem; font-weight: 700; margin-top: 1.4rem; margin-bottom: 0.4rem; color: #1e3a5f; }
+    .prose h3 { font-size: 0.9rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.3rem; color: #1e40af; }
+    .prose p  { margin-bottom: 0.6rem; line-height: 1.65; }
     .prose ul { list-style: disc; padding-left: 1.4rem; margin-bottom: 0.6rem; }
     .prose li { margin-bottom: 0.3rem; line-height: 1.6; }
+    .prose strong { font-weight: 700; }
+
+    /* Chat textarea auto-grow hint */
+    #request-input {
+      min-height: 52px;
+      max-height: 200px;
+      resize: none;
+      overflow-y: auto;
+    }
+
+    /* Scrollbar subtle */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
   </style>
 </head>
-<body class="bg-gray-100 min-h-screen font-sans text-sm text-gray-800">
+<body class="bg-gray-50 min-h-screen font-sans text-sm text-gray-800 antialiased">
 
-<!-- Header -->
-<header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
-  <div class="flex items-center gap-3">
-    <div class="w-8 h-8 bg-blue-700 rounded flex items-center justify-center text-white font-bold text-xs">CQ</div>
-    <span class="font-semibold text-gray-700 text-base">ChainIQ · Sourcing Intelligence</span>
+<!-- ══════════════════════════════════════════════════════════════
+     CHAT PHASE  (visible on load)
+══════════════════════════════════════════════════════════════ -->
+<div id="chat-phase" class="min-h-screen flex flex-col items-center justify-center px-4 pb-16">
+
+  <!-- Brand -->
+  <div class="flex items-center gap-2 mb-10 select-none">
+    <div class="w-9 h-9 bg-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow">CQ</div>
+    <span class="text-gray-500 font-medium text-base tracking-tight">ChainIQ · Sourcing Intelligence</span>
   </div>
-  <button id="btn-load"
-    class="bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2 rounded transition">
-    Load Example
-  </button>
-</header>
 
-<!-- New Request Form -->
-<div class="max-w-screen-xl mx-auto px-4 pt-5">
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-    <h2 class="font-semibold text-gray-700 text-sm mb-4">New Purchase Request</h2>
-    <div class="space-y-3">
-      <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Request Text <span class="text-red-500">*</span></label>
-        <textarea id="input-request-text" rows="3"
-          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          placeholder="e.g. Need 500 laptops by April 15th, budget €400k, prefer Dell, delivery to Germany"></textarea>
-      </div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Business Unit</label>
-          <input id="input-business-unit" type="text"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="e.g. Finance, IT, HR" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Country</label>
-          <input id="input-country" type="text"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="e.g. DE, CH, FR" />
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-gray-500 mb-1">Currency</label>
-          <select id="input-currency"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="EUR">EUR</option>
-            <option value="CHF">CHF</option>
-            <option value="USD">USD</option>
-            <option value="GBP">GBP</option>
-          </select>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 pt-1">
-        <button id="btn-submit"
-          class="bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-5 py-2 rounded transition">
-          Submit
-        </button>
-        <div id="form-spinner" class="hidden flex items-center gap-2 text-xs text-gray-400">
-          <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-          </svg>
-          <span id="form-status-text">Parsing request…</span>
-        </div>
-        <div id="form-error" class="hidden text-xs text-red-600"></div>
-      </div>
-    </div>
-  </div>
-</div>
+  <!-- Headline -->
+  <h1 class="text-3xl font-bold text-gray-900 text-center mb-2 leading-tight max-w-xl">
+    Describe your procurement need
+  </h1>
+  <p class="text-gray-500 text-center mb-8 max-w-md leading-relaxed">
+    Tell us what you need to purchase — our AI will analyse suppliers, policies, and pricing.
+  </p>
 
-<!-- Parsed JSON viewer -->
-<div id="json-viewer" class="hidden max-w-screen-xl mx-auto px-4 pt-3">
-  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-    <button id="btn-toggle-json" class="w-full flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wide">
-      <span>Parsed Request JSON</span>
-      <span id="json-toggle-icon" class="text-gray-400 text-base">▶</span>
+  <!-- Chat bar -->
+  <div class="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-lg px-4 py-3 flex items-end gap-3">
+    <textarea
+      id="request-input"
+      class="flex-1 bg-transparent outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed"
+      placeholder="e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k"
+      rows="2"
+    ></textarea>
+    <button id="send-btn"
+      class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
+      title="Submit">
+      <!-- Arrow icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+      </svg>
     </button>
-    <pre id="json-output" class="hidden mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 overflow-x-auto whitespace-pre-wrap"></pre>
   </div>
+
+  <!-- Optional fields -->
+  <div id="optional-fields" class="w-full max-w-2xl mt-3 flex flex-wrap gap-2">
+    <input id="input-business-unit" type="text"
+      class="border border-gray-200 bg-white rounded-full px-3 py-1.5 text-xs text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+      placeholder="Business Unit (optional)" />
+    <input id="input-country" type="text"
+      class="border border-gray-200 bg-white rounded-full px-3 py-1.5 text-xs text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+      placeholder="Country (optional)" />
+    <select id="input-currency"
+      class="border border-gray-200 bg-white rounded-full px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <option value="EUR">EUR</option>
+      <option value="CHF">CHF</option>
+      <option value="USD">USD</option>
+      <option value="GBP">GBP</option>
+    </select>
+  </div>
+
+  <!-- Load example link -->
+  <button id="btn-load-example" class="mt-6 text-xs text-gray-400 hover:text-blue-500 transition underline underline-offset-2">
+    Load example request
+  </button>
 </div>
 
-<!-- Main layout -->
-<main class="max-w-screen-xl mx-auto px-4 py-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+<!-- ══════════════════════════════════════════════════════════════
+     LOADING OVERLAY  (shown between phases)
+══════════════════════════════════════════════════════════════ -->
+<div id="loading-overlay" class="hidden fixed inset-0 bg-gray-50 flex flex-col items-center justify-center gap-4 z-10">
+  <div class="dot-flashing"><span></span><span></span><span></span></div>
+  <p id="loading-status" class="text-gray-400 text-sm">Analysing your request…</p>
+</div>
 
-  <!-- LEFT PANEL -->
-  <section class="space-y-4">
+<!-- ══════════════════════════════════════════════════════════════
+     RESULT PHASE  (hidden until processing complete)
+══════════════════════════════════════════════════════════════ -->
+<div id="result-phase" class="hidden">
 
-    <!-- Request card -->
-    <div id="card-request" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-3">Purchase Request</h2>
-      <div id="request-empty" class="text-gray-400 italic text-xs">No request loaded. Click "Load Example".</div>
-      <dl id="request-fields" class="hidden grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs"></dl>
+  <!-- Sticky top bar -->
+  <div class="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
+      <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
     </div>
+    <button id="btn-new-request"
+      class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition">
+      ← New Request
+    </button>
+  </div>
 
-    <!-- Validation -->
-    <div id="card-validation" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide">Validation</h2>
-        <span id="badge-validation" class="hidden text-xs font-bold px-2 py-0.5 rounded-full"></span>
-      </div>
-      <div id="validation-empty" class="text-gray-400 italic text-xs">—</div>
-      <ul id="issues-list" class="hidden space-y-2"></ul>
-    </div>
-
-    <!-- Escalations -->
-    <div id="card-escalations" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-3">Escalations</h2>
-      <div id="escalations-empty" class="text-gray-400 italic text-xs">—</div>
-      <ul id="escalations-list" class="hidden space-y-2"></ul>
-    </div>
-
-  </section>
-
-  <!-- RIGHT PANEL -->
-  <section class="space-y-4">
+  <!-- Content -->
+  <main class="max-w-3xl mx-auto px-4 py-10 space-y-10">
 
     <!-- Status banner -->
-    <div id="status-banner" class="hidden rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
-      <span id="status-icon" class="text-xl"></span>
+    <div id="status-banner" class="hidden rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
+      <span id="status-icon" class="text-2xl"></span>
       <div>
-        <div id="status-title" class="font-bold text-sm"></div>
-        <div id="status-reason" class="text-xs opacity-80 mt-0.5"></div>
+        <div id="status-title" class="font-bold text-base"></div>
+        <div id="status-reason" class="text-sm opacity-80 mt-0.5"></div>
       </div>
     </div>
 
-    <!-- Supplier table -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-3">Supplier Shortlist</h2>
-      <div id="table-empty" class="text-gray-400 italic text-xs">—</div>
-      <div id="table-wrap" class="hidden overflow-x-auto">
-        <table class="w-full text-xs border-collapse">
-          <thead>
-            <tr class="bg-gray-50 text-gray-500 text-left">
-              <th class="px-2 py-2 font-semibold">#</th>
-              <th class="px-2 py-2 font-semibold">Supplier</th>
-              <th class="px-2 py-2 font-semibold text-center">Pref</th>
-              <th class="px-2 py-2 font-semibold text-right">Unit €</th>
-              <th class="px-2 py-2 font-semibold text-right">Total €</th>
-              <th class="px-2 py-2 font-semibold text-center">Qual</th>
-              <th class="px-2 py-2 font-semibold text-center">Risk</th>
-              <th class="px-2 py-2 font-semibold text-center">ESG</th>
-              <th class="px-2 py-2 font-semibold text-center">LT (std)</th>
-              <th class="px-2 py-2 font-semibold text-center">OK</th>
-            </tr>
-          </thead>
-          <tbody id="supplier-tbody" class="divide-y divide-gray-100"></tbody>
-        </table>
+    <!-- AI Explanation -->
+    <section>
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">AI Analysis</h2>
+      <div id="explanation-container" class="prose max-w-none text-gray-700 text-sm leading-relaxed space-y-2"></div>
+    </section>
+
+    <!-- Supplier shortlist -->
+    <section id="supplier-section" class="hidden">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Supplier Shortlist</h2>
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs border-collapse">
+            <thead>
+              <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
+                <th class="px-3 py-2.5 font-semibold">#</th>
+                <th class="px-3 py-2.5 font-semibold">Supplier</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Pref</th>
+                <th class="px-3 py-2.5 font-semibold text-right">Unit €</th>
+                <th class="px-3 py-2.5 font-semibold text-right">Total €</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
+                <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
+                <th class="px-3 py-2.5 font-semibold text-center">Lead (std)</th>
+                <th class="px-3 py-2.5 font-semibold text-center">OK</th>
+              </tr>
+            </thead>
+            <tbody id="supplier-tbody" class="divide-y divide-gray-100"></tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </section>
+
+    <!-- Validation -->
+    <section id="validation-section" class="hidden">
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest">Validation</h2>
+        <span id="badge-validation" class="text-xs font-bold px-2 py-0.5 rounded-full"></span>
+      </div>
+      <ul id="issues-list" class="space-y-2"></ul>
+    </section>
+
+    <!-- Escalations -->
+    <section id="escalation-section" class="hidden">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Escalations</h2>
+      <ul id="escalations-list" class="space-y-2"></ul>
+    </section>
 
     <!-- Excluded suppliers -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-2">Excluded Suppliers</h2>
-      <div id="excluded-empty" class="text-gray-400 italic text-xs">—</div>
-      <ul id="excluded-list" class="hidden space-y-1 text-xs text-gray-600"></ul>
+    <section id="excluded-section" class="hidden">
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Excluded Suppliers</h2>
+      <ul id="excluded-list" class="space-y-1 text-xs text-gray-600"></ul>
+    </section>
+
+    <!-- Request details (collapsible) -->
+    <section id="request-section" class="hidden">
+      <button id="btn-toggle-request" class="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+        <span>Request Details</span>
+        <span id="request-toggle-icon" class="text-gray-400 text-base">▶</span>
+      </button>
+      <dl id="request-fields" class="hidden bg-white rounded-xl border border-gray-200 shadow-sm p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs"></dl>
+    </section>
+
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     DEV PANEL  (bottom-right, shown via ?dev=true)
+══════════════════════════════════════════════════════════════ -->
+<div id="dev-panel" class="hidden fixed bottom-4 right-4 flex flex-col gap-2 z-30">
+  <button onclick="showDevModal('parsed')"
+    class="bg-gray-800 hover:bg-gray-700 text-white text-xs font-mono px-3 py-1.5 rounded-lg shadow opacity-70 hover:opacity-100 transition">
+    { } Parsed JSON
+  </button>
+  <button onclick="showDevModal('output')"
+    class="bg-gray-800 hover:bg-gray-700 text-white text-xs font-mono px-3 py-1.5 rounded-lg shadow opacity-70 hover:opacity-100 transition">
+    { } Output JSON
+  </button>
+</div>
+
+<!-- Dev modal -->
+<div id="dev-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
+  <div class="bg-gray-900 rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+      <span id="dev-modal-title" class="text-xs font-mono text-gray-300 font-semibold"></span>
+      <button onclick="closeDevModal()" class="text-gray-400 hover:text-white text-lg leading-none transition">✕</button>
     </div>
-
-    <!-- Explain button + output -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide">AI Explanation</h2>
-        <button id="btn-explain"
-          class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-1.5 rounded transition"
-          disabled>
-          Explain Decision
-        </button>
-      </div>
-
-      <!-- Spinner -->
-      <div id="spinner" class="hidden flex items-center gap-2 text-xs text-gray-400 py-2">
-        <svg class="animate-spin h-4 w-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-        </svg>
-        Generating explanation…
-      </div>
-
-      <div id="explanation-empty" class="text-gray-400 italic text-xs">Click "Explain Decision" to generate an AI-powered breakdown.</div>
-      <div id="explanation-output" class="hidden prose max-w-none text-xs text-gray-700 leading-relaxed"></div>
-    </div>
-
-  </section>
-</main>
+    <pre id="dev-modal-content" class="flex-1 overflow-auto p-4 text-xs text-green-300 font-mono whitespace-pre-wrap"></pre>
+  </div>
+</div>
 
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
+  const devData = { parsed: null, output: null };
   let loadedOutput = null;
   let loadedRequestText = null;
 
+  // ── Dev panel visibility ───────────────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('dev') === 'true') {
+    document.getElementById('dev-panel').classList.remove('hidden');
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
   const fmt = n => n != null ? Number(n).toLocaleString('en-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—';
   const fmtInt = n => n != null ? Number(n).toLocaleString() : '—';
 
@@ -218,32 +290,115 @@
     return good ? 'text-green-700 font-semibold' : mid ? 'text-yellow-700' : 'text-red-700';
   }
 
-  // ── Render functions ───────────────────────────────────────────────────────
+  function getMetadata() {
+    const timestamp = Date.now();
+    const meta = {
+      request_id: `REQ-FORM-${timestamp}`,
+      created_at: new Date().toISOString(),
+      request_channel: 'portal',
+      status: 'new',
+    };
+    const bu = $('input-business-unit').value.trim();
+    const country = $('input-country').value.trim();
+    const currency = $('input-currency').value;
+    if (bu) meta.business_unit = bu;
+    if (country) meta.country = country;
+    if (currency) meta.currency = currency;
+    return meta;
+  }
 
-  function renderRequest(req, out) {
-    const interp = out.request_interpretation || {};
-    const fields = [
-      ['Request ID',    out.request_id],
-      ['Category',      `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
-      ['Quantity',      `${fmtInt(interp.quantity || req.quantity)} ${interp.unit_of_measure || req.unit_of_measure || ''}`],
-      ['Budget',        `€ ${fmt(interp.budget_amount || req.budget_amount)} ${interp.currency || req.currency || ''}`],
-      ['Delivery by',   interp.required_by_date || req.required_by_date || '—'],
-      ['Country',       interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
-      ['Pref. supplier',interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
-      ['Incumbent',     interp.incumbent_supplier || req.incumbent_supplier || '—'],
-    ];
+  // ── Dev modal ─────────────────────────────────────────────────────────────
+  function showDevModal(type) {
+    const data = type === 'parsed' ? devData.parsed : devData.output;
+    $('dev-modal-title').textContent = type === 'parsed' ? 'Parsed Request JSON' : 'Output JSON';
+    $('dev-modal-content').textContent = data ? JSON.stringify(data, null, 2) : '(no data yet)';
+    $('dev-modal').classList.remove('hidden');
+  }
+  function closeDevModal() {
+    $('dev-modal').classList.add('hidden');
+  }
+  $('dev-modal').addEventListener('click', e => {
+    if (e.target === $('dev-modal')) closeDevModal();
+  });
 
-    const dl = $('request-fields');
-    dl.innerHTML = fields.map(([k, v]) =>
-      `<div class="contents"><dt class="text-gray-400 font-medium">${k}</dt><dd class="text-gray-800 font-semibold">${v}</dd></div>`
-    ).join('');
-    $('request-empty').classList.add('hidden');
-    dl.classList.remove('hidden');
+  // ── Phase transitions ─────────────────────────────────────────────────────
+  function showLoading(msg) {
+    $('loading-status').textContent = msg || 'Analysing your request…';
+    $('loading-overlay').classList.remove('hidden');
+  }
+  function updateLoadingStatus(msg) {
+    $('loading-status').textContent = msg;
+  }
+  function hideLoading() {
+    $('loading-overlay').classList.add('hidden');
+  }
+
+  async function transitionToResults() {
+    $('result-phase').classList.remove('hidden');
+    $('result-phase').classList.add('fade-in');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  async function transitionToChat() {
+    $('result-phase').classList.add('hidden');
+    $('result-phase').classList.remove('fade-in');
+    const chatPhase = $('chat-phase');
+    chatPhase.style.display = '';
+    chatPhase.style.opacity = '0';
+    chatPhase.style.transform = 'translateY(-20px)';
+    chatPhase.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+    requestAnimationFrame(() => {
+      chatPhase.style.opacity = '1';
+      chatPhase.style.transform = 'translateY(0)';
+    });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────────────
+  function renderStatusBanner(rec) {
+    const banner = $('status-banner');
+    banner.classList.remove('hidden');
+    if (rec.status === 'can_proceed') {
+      banner.className = 'rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm bg-green-50 border border-green-200';
+      $('status-icon').textContent = '✅';
+      $('status-title').textContent = 'Can Proceed';
+      $('status-title').className = 'font-bold text-base text-green-800';
+    } else {
+      banner.className = 'rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm bg-red-50 border border-red-200';
+      $('status-icon').textContent = '🚫';
+      $('status-title').textContent = 'Cannot Proceed';
+      $('status-title').className = 'font-bold text-base text-red-800';
+    }
+    $('status-reason').textContent = rec.reason || '';
+  }
+
+  function renderSuppliers(shortlist) {
+    if (!shortlist || shortlist.length === 0) return;
+    const tbody = $('supplier-tbody');
+    tbody.innerHTML = shortlist.map((s, idx) => {
+      const rowBg = idx === 0 ? 'bg-blue-50' : '';
+      return `<tr class="${rowBg} hover:bg-gray-50">
+        <td class="px-3 py-2.5 font-bold text-gray-400">${s.rank}</td>
+        <td class="px-3 py-2.5">
+          <div class="font-semibold text-gray-800">${s.supplier_name}</div>
+          <div class="text-gray-400 text-xs">${s.supplier_id}</div>
+        </td>
+        <td class="px-3 py-2.5 text-center">${s.preferred ? '⭐' : ''}${s.incumbent ? ' <span class="text-indigo-600 font-semibold text-xs">Inc.</span>' : ''}</td>
+        <td class="px-3 py-2.5 text-right font-mono">${fmt(s.unit_price_eur)}</td>
+        <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
+        <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
+        <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
+        <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
+        <td class="px-3 py-2.5 text-center">${s.standard_lead_time_days ?? '—'}d</td>
+        <td class="px-3 py-2.5 text-center">${s.policy_compliant ? '<span class="text-green-600 font-bold">✓</span>' : '<span class="text-red-500 font-bold">✗</span>'}</td>
+      </tr>`;
+    }).join('');
+    $('supplier-section').classList.remove('hidden');
   }
 
   function renderValidation(val) {
+    const issues = val.issues_detected || [];
     const badge = $('badge-validation');
-    badge.classList.remove('hidden');
     if (val.completeness === 'pass') {
       badge.textContent = 'PASS';
       badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800';
@@ -251,168 +406,148 @@
       badge.textContent = 'FAIL';
       badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800';
     }
-
-    const issues = val.issues_detected || [];
-    if (issues.length === 0) {
-      $('validation-empty').textContent = 'No issues detected.';
-      return;
+    if (issues.length > 0) {
+      $('issues-list').innerHTML = issues.map(i => `
+        <li class="border rounded-lg p-3 text-xs ${severityClass(i.severity)}">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="font-bold uppercase">${i.severity}</span>
+            <span class="font-semibold">${i.issue_id}</span>
+            <span class="opacity-70">${i.type}</span>
+          </div>
+          <p class="mb-1">${i.description}</p>
+          <p class="opacity-80"><span class="font-semibold">Action:</span> ${i.action_required}</p>
+        </li>`).join('');
+    } else {
+      $('issues-list').innerHTML = '<li class="text-xs text-gray-400 italic">No issues detected.</li>';
     }
-    $('validation-empty').classList.add('hidden');
-    const ul = $('issues-list');
-    ul.innerHTML = issues.map(i => `
-      <li class="border rounded p-2 text-xs ${severityClass(i.severity)}">
-        <div class="flex items-center gap-2 mb-0.5">
-          <span class="font-bold uppercase text-xs">${i.severity}</span>
-          <span class="font-semibold">${i.issue_id}</span>
-          <span class="opacity-70">${i.type}</span>
-        </div>
-        <p class="mb-1">${i.description}</p>
-        <p class="opacity-80"><span class="font-semibold">Action:</span> ${i.action_required}</p>
-      </li>`).join('');
-    ul.classList.remove('hidden');
+    $('validation-section').classList.remove('hidden');
   }
 
   function renderEscalations(escalations) {
-    if (!escalations || escalations.length === 0) {
-      $('escalations-empty').textContent = 'No escalations.';
-      return;
-    }
-    $('escalations-empty').classList.add('hidden');
-    const ul = $('escalations-list');
-    ul.innerHTML = escalations.map(e => `
-      <li class="border rounded p-2 text-xs ${e.blocking ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}">
-        <div class="flex items-center gap-2 mb-0.5">
-          ${e.blocking ? '<span class="bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">BLOCKING</span>' : '<span class="bg-yellow-500 text-white text-xs font-bold px-1.5 py-0.5 rounded">INFO</span>'}
+    if (!escalations || escalations.length === 0) return;
+    $('escalations-list').innerHTML = escalations.map(e => `
+      <li class="border rounded-lg p-3 text-xs ${e.blocking ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}">
+        <div class="flex items-center gap-2 mb-1">
+          ${e.blocking
+            ? '<span class="bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">BLOCKING</span>'
+            : '<span class="bg-yellow-500 text-white text-xs font-bold px-1.5 py-0.5 rounded">INFO</span>'}
           <span class="font-semibold">${e.escalation_id}</span>
           <span class="text-gray-500">${e.rule}</span>
         </div>
-        <p class="mb-0.5">${e.trigger}</p>
+        <p class="mb-1">${e.trigger}</p>
         <p class="text-gray-600"><span class="font-semibold">→ Escalate to:</span> ${e.escalate_to}</p>
       </li>`).join('');
-    ul.classList.remove('hidden');
-  }
-
-  function renderStatusBanner(rec) {
-    const banner = $('status-banner');
-    banner.classList.remove('hidden');
-    if (rec.status === 'can_proceed') {
-      banner.className = 'hidden rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm bg-green-50 border border-green-200';
-      banner.classList.remove('hidden');
-      $('status-icon').textContent = '✅';
-      $('status-title').textContent = 'Can Proceed';
-      $('status-title').className = 'font-bold text-sm text-green-800';
-    } else {
-      banner.className = 'hidden rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm bg-red-50 border border-red-200';
-      banner.classList.remove('hidden');
-      $('status-icon').textContent = '🚫';
-      $('status-title').textContent = 'Cannot Proceed';
-      $('status-title').className = 'font-bold text-sm text-red-800';
-    }
-    $('status-reason').textContent = rec.reason || '';
-  }
-
-  function renderSuppliers(shortlist) {
-    if (!shortlist || shortlist.length === 0) return;
-    $('table-empty').classList.add('hidden');
-    const tbody = $('supplier-tbody');
-    tbody.innerHTML = shortlist.map((s, idx) => {
-      const rowBg = idx === 0 ? 'bg-blue-50' : '';
-      return `<tr class="${rowBg} hover:bg-gray-50">
-        <td class="px-2 py-2 font-bold text-gray-500">${s.rank}</td>
-        <td class="px-2 py-2">
-          <div class="font-semibold text-gray-800">${s.supplier_name}</div>
-          <div class="text-gray-400 text-xs">${s.supplier_id}</div>
-        </td>
-        <td class="px-2 py-2 text-center">${s.preferred ? '⭐' : ''}${s.incumbent ? ' <span class="text-xs text-indigo-600 font-semibold">Inc.</span>' : ''}</td>
-        <td class="px-2 py-2 text-right font-mono">${fmt(s.unit_price_eur)}</td>
-        <td class="px-2 py-2 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
-        <td class="px-2 py-2 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
-        <td class="px-2 py-2 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
-        <td class="px-2 py-2 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
-        <td class="px-2 py-2 text-center">${s.standard_lead_time_days ?? '—'}d</td>
-        <td class="px-2 py-2 text-center">${s.policy_compliant ? '<span class="text-green-600 font-bold">✓</span>' : '<span class="text-red-500 font-bold">✗</span>'}</td>
-      </tr>`;
-    }).join('');
-    $('table-wrap').classList.remove('hidden');
+    $('escalation-section').classList.remove('hidden');
   }
 
   function renderExcluded(excluded) {
-    if (!excluded || excluded.length === 0) {
-      $('excluded-empty').textContent = 'None.';
-      return;
-    }
-    $('excluded-empty').classList.add('hidden');
-    const ul = $('excluded-list');
-    ul.innerHTML = excluded.map(s =>
-      `<li class="flex gap-2"><span class="text-red-500 font-bold shrink-0">✗</span><span><span class="font-semibold">${s.supplier_name}</span> — ${s.reason}</span></li>`
+    if (!excluded || excluded.length === 0) return;
+    $('excluded-list').innerHTML = excluded.map(s =>
+      `<li class="flex gap-2 text-xs"><span class="text-red-500 font-bold shrink-0">✗</span><span><span class="font-semibold">${s.supplier_name}</span> — ${s.reason}</span></li>`
     ).join('');
-    ul.classList.remove('hidden');
+    $('excluded-section').classList.remove('hidden');
   }
 
-  function renderAll(data) {
-    const { output_json: out, request_json: req } = data;
-    renderRequest(req || {}, out);
-    renderValidation(out.validation || {});
-    renderEscalations(out.escalations || []);
+  function renderRequestDetails(req, out) {
+    const interp = out.request_interpretation || {};
+    const fields = [
+      ['Request ID',      out.request_id],
+      ['Category',        `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
+      ['Quantity',        `${fmtInt(interp.quantity || req.quantity)} ${interp.unit_of_measure || req.unit_of_measure || ''}`],
+      ['Budget',          `€ ${fmt(interp.budget_amount || req.budget_amount)}`],
+      ['Delivery by',     interp.required_by_date || req.required_by_date || '—'],
+      ['Country',         interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
+      ['Pref. supplier',  interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
+      ['Incumbent',       interp.incumbent_supplier || req.incumbent_supplier || '—'],
+    ];
+    const dl = $('request-fields');
+    dl.innerHTML = fields.map(([k, v]) =>
+      `<div class="contents"><dt class="text-gray-400 font-medium">${k}</dt><dd class="text-gray-800 font-semibold">${v}</dd></div>`
+    ).join('');
+    $('request-section').classList.remove('hidden');
+  }
+
+  // ── Explanation with staggered animation ─────────────────────────────────
+  async function renderExplanationAnimated(explanation) {
+    const container = $('explanation-container');
+    container.innerHTML = '';
+
+    // Parse markdown to HTML, then split into paragraph elements
+    const html = marked.parse(explanation);
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    const nodes = Array.from(temp.children);
+
+    nodes.forEach((node, i) => {
+      node.classList.add('para-animate');
+      node.style.animationDelay = `${i * 160}ms`;
+      container.appendChild(node);
+    });
+  }
+
+  // ── Reset all result sections ─────────────────────────────────────────────
+  function resetResults() {
+    $('explanation-container').innerHTML = '';
+    $('status-banner').classList.add('hidden');
+    $('supplier-section').classList.add('hidden');
+    $('supplier-tbody').innerHTML = '';
+    $('validation-section').classList.add('hidden');
+    $('issues-list').innerHTML = '';
+    $('escalation-section').classList.add('hidden');
+    $('escalations-list').innerHTML = '';
+    $('excluded-section').classList.add('hidden');
+    $('excluded-list').innerHTML = '';
+    $('request-section').classList.add('hidden');
+    $('request-fields').classList.add('hidden');
+    $('request-toggle-icon').textContent = '▶';
+  }
+
+  // ── Render all from output JSON ───────────────────────────────────────────
+  function renderDataSections(out, req) {
     renderStatusBanner(out.recommendation || {});
     renderSuppliers(out.supplier_shortlist || []);
+    renderValidation(out.validation || {});
+    renderEscalations(out.escalations || []);
     renderExcluded(out.suppliers_excluded || []);
-    $('btn-explain').disabled = false;
+    renderRequestDetails(req || {}, out);
     loadedOutput = out;
     loadedRequestText = (req && req.request_text) || null;
   }
 
-  // ── Event listeners ────────────────────────────────────────────────────────
-
-  // ── Submit new request flow ────────────────────────────────────────────────
-
-  async function submitRequest() {
-    const requestText = $('input-request-text').value.trim();
-    if (!requestText) {
-      $('input-request-text').focus();
+  // ── Main submit flow ──────────────────────────────────────────────────────
+  async function handleSubmit() {
+    const text = $('request-input').value.trim();
+    if (!text) {
+      $('request-input').focus();
       return;
     }
 
-    const timestamp = Date.now();
-    const metadata = {
-      request_id: `REQ-FORM-${timestamp}`,
-      created_at: new Date().toISOString(),
-      request_channel: 'portal',
-      status: 'new',
-    };
-    const businessUnit = $('input-business-unit').value.trim();
-    const country = $('input-country').value.trim();
-    const currency = $('input-currency').value;
-    if (businessUnit) metadata.business_unit = businessUnit;
-    if (country) metadata.country = country;
-    if (currency) metadata.currency = currency;
+    // 1. Animate chat bar out
+    const chatPhase = $('chat-phase');
+    chatPhase.classList.add('fade-out-down');
+    await sleep(400);
+    chatPhase.style.display = 'none';
+    chatPhase.classList.remove('fade-out-down');
 
-    $('btn-submit').disabled = true;
-    $('form-error').classList.add('hidden');
-    $('form-spinner').classList.remove('hidden');
-    $('form-status-text').textContent = 'Parsing request…';
+    resetResults();
+    showLoading('Parsing your request…');
 
     try {
-      // Step 1: parse free text → structured request JSON
+      // 2. /parse
       const parseRes = await fetch('/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_text: requestText, metadata }),
+        body: JSON.stringify({ request_text: text, metadata: getMetadata() }),
       });
       if (!parseRes.ok) {
         const err = await parseRes.json().catch(() => ({ detail: parseRes.statusText }));
         throw new Error(err.detail || parseRes.statusText);
       }
       const { request_json } = await parseRes.json();
+      devData.parsed = request_json;
 
-      // Show parsed JSON
-      $('json-output').textContent = JSON.stringify(request_json, null, 2);
-      $('json-viewer').classList.remove('hidden');
-      $('json-output').classList.remove('hidden');
-      $('json-toggle-icon').textContent = '▼';
-
-      // Step 2: process structured request → output
-      $('form-status-text').textContent = 'Processing…';
+      // 3. /process
+      updateLoadingStatus('Evaluating suppliers and policies…');
       const processRes = await fetch('/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -422,70 +557,120 @@
         const err = await processRes.json().catch(() => ({ detail: processRes.statusText }));
         throw new Error(err.detail || processRes.statusText);
       }
-      const data = await processRes.json();
-      renderAll(data);
+      const { output_json, request_json: returnedReq } = await processRes.json();
+      devData.output = output_json;
+
+      // 4. /explain
+      updateLoadingStatus('Generating AI explanation…');
+      const explainRes = await fetch('/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_json, request_text: text }),
+      });
+      if (!explainRes.ok) {
+        const err = await explainRes.json().catch(() => ({ detail: explainRes.statusText }));
+        throw new Error(err.detail || explainRes.statusText);
+      }
+      const { explanation } = await explainRes.json();
+
+      // 5. Show results
+      hideLoading();
+      renderDataSections(output_json, returnedReq || request_json);
+      await transitionToResults();
+      await renderExplanationAnimated(explanation);
+
     } catch (e) {
-      $('form-error').textContent = 'Error: ' + e.message;
-      $('form-error').classList.remove('hidden');
-    } finally {
-      $('form-spinner').classList.add('hidden');
-      $('btn-submit').disabled = false;
+      hideLoading();
+      chatPhase.style.display = '';
+      // Show error in result phase briefly
+      alert('Error: ' + e.message);
     }
   }
 
-  $('btn-submit').addEventListener('click', submitRequest);
+  // ── Load example ─────────────────────────────────────────────────────────
+  async function loadExample() {
+    const chatPhase = $('chat-phase');
+    chatPhase.classList.add('fade-out-down');
+    await sleep(400);
+    chatPhase.style.display = 'none';
+    chatPhase.classList.remove('fade-out-down');
 
-  $('btn-toggle-json').addEventListener('click', () => {
-    const pre = $('json-output');
-    const icon = $('json-toggle-icon');
-    if (pre.classList.contains('hidden')) {
-      pre.classList.remove('hidden');
-      icon.textContent = '▼';
-    } else {
-      pre.classList.add('hidden');
-      icon.textContent = '▶';
-    }
-  });
+    resetResults();
+    showLoading('Loading example…');
 
-  $('btn-load').addEventListener('click', async () => {
     try {
       const r = await fetch('/example');
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
-      renderAll(data);
-    } catch (e) {
-      alert('Failed to load example: ' + e.message);
-    }
-  });
 
-  $('btn-explain').addEventListener('click', async () => {
-    if (!loadedOutput) return;
-    $('btn-explain').disabled = true;
-    $('spinner').classList.remove('hidden');
-    $('explanation-empty').classList.add('hidden');
-    $('explanation-output').classList.add('hidden');
+      devData.parsed = data.request_json;
+      devData.output = data.output_json;
 
-    try {
-      const r = await fetch('/explain', {
+      // Also hit /explain for the example
+      updateLoadingStatus('Generating AI explanation…');
+      const explainRes = await fetch('/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ output_json: loadedOutput, request_text: loadedRequestText }),
+        body: JSON.stringify({ output_json: data.output_json }),
       });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || r.statusText);
+      let explanation = null;
+      if (explainRes.ok) {
+        const explainData = await explainRes.json();
+        explanation = explainData.explanation;
       }
-      const { explanation } = await r.json();
-      $('explanation-output').innerHTML = marked.parse(explanation);
-      $('explanation-output').classList.remove('hidden');
+
+      hideLoading();
+      renderDataSections(data.output_json, data.request_json);
+      await transitionToResults();
+      if (explanation) {
+        await renderExplanationAnimated(explanation);
+      } else {
+        $('explanation-container').innerHTML = '<p class="text-gray-400 italic text-xs">Explanation unavailable.</p>';
+      }
     } catch (e) {
-      $('explanation-empty').textContent = 'Error: ' + e.message;
-      $('explanation-empty').classList.remove('hidden');
-    } finally {
-      $('spinner').classList.add('hidden');
-      $('btn-explain').disabled = false;
+      hideLoading();
+      chatPhase.style.display = '';
+      alert('Failed to load example: ' + e.message);
+    }
+  }
+
+  // ── New Request ───────────────────────────────────────────────────────────
+  $('btn-new-request').addEventListener('click', async () => {
+    await transitionToChat();
+    $('request-input').value = '';
+    $('request-input').focus();
+  });
+
+  // ── Request details toggle ────────────────────────────────────────────────
+  $('btn-toggle-request').addEventListener('click', () => {
+    const dl = $('request-fields');
+    const icon = $('request-toggle-icon');
+    if (dl.classList.contains('hidden')) {
+      dl.classList.remove('hidden');
+      icon.textContent = '▼';
+    } else {
+      dl.classList.add('hidden');
+      icon.textContent = '▶';
     }
   });
+
+  // ── Send on click / Enter ─────────────────────────────────────────────────
+  $('send-btn').addEventListener('click', handleSubmit);
+
+  $('request-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  });
+
+  // Auto-grow textarea
+  $('request-input').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+  });
+
+  $('btn-load-example').addEventListener('click', loadExample);
 </script>
 </body>
 </html>
