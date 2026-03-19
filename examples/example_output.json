@@ -1,0 +1,190 @@
+{
+  "_note": "This is an illustrative example of the expected agent output format for REQ-000004. It is not a reference implementation — your system may structure its reasoning differently. What matters is that all required components are present, traceable, and correct.",
+
+  "request_id": "REQ-000004",
+  "processed_at": "2026-03-14T18:02:11Z",
+
+  "request_interpretation": {
+    "category_l1": "IT",
+    "category_l2": "Docking Stations",
+    "quantity": 240,
+    "unit_of_measure": "device",
+    "budget_amount": 25199.55,
+    "currency": "EUR",
+    "delivery_country": "DE",
+    "required_by_date": "2026-03-20",
+    "days_until_required": 6,
+    "data_residency_required": false,
+    "esg_requirement": false,
+    "preferred_supplier_stated": "Dell Enterprise Europe",
+    "incumbent_supplier": "Bechtle Workplace Solutions",
+    "requester_instruction": "no exception — single supplier only"
+  },
+
+  "validation": {
+    "completeness": "pass",
+    "issues_detected": [
+      {
+        "issue_id": "V-001",
+        "severity": "critical",
+        "type": "budget_insufficient",
+        "description": "Budget of EUR 25,199.55 cannot cover 240 units at any compliant supplier's standard pricing. Lowest available unit price is EUR 148.80 (Bechtle, tier 100–499), yielding a minimum total of EUR 35,712.00 — EUR 10,512.45 over budget.",
+        "action_required": "Requester must either increase budget to at least EUR 35,712 or reduce quantity to a maximum of 169 units within the stated budget."
+      },
+      {
+        "issue_id": "V-002",
+        "severity": "high",
+        "type": "policy_conflict",
+        "description": "Requester instruction 'no exception' conflicts with AT-002: a contract value above EUR 25,000 requires at least 2 supplier quotes. All compliant pricing options for 240 units exceed EUR 35,712, placing this firmly in the AT-002 tier. The requester cannot waive this requirement unilaterally.",
+        "action_required": "Procurement policy AT-002 must be applied. Two quotes are required and a deviation requires Procurement Manager approval."
+      },
+      {
+        "issue_id": "V-003",
+        "severity": "high",
+        "type": "lead_time_infeasible",
+        "description": "Required delivery date 2026-03-20 is 6 days from request creation (2026-03-14). All suppliers' standard lead times for Docking Stations exceed 20 days. Even expedited lead times (17–19 days) do not meet the 6-day window.",
+        "action_required": "Requester must confirm whether the delivery date is a hard constraint. If so, no compliant supplier can meet it and an escalation is required."
+      }
+    ]
+  },
+
+  "policy_evaluation": {
+    "approval_threshold": {
+      "rule_applied": "AT-002",
+      "basis": "All valid pricing options place total contract value between EUR 35,712 and EUR 37,200 — above the EUR 25,000 AT-002 threshold.",
+      "quotes_required": 2,
+      "approvers": ["business", "procurement"],
+      "deviation_approval": "Procurement Manager",
+      "note": "Stated budget of EUR 25,199.55 falls just above the AT-001 ceiling (EUR 24,999.99), so requester may have believed this was a single-quote scenario. However, stated budget cannot cover the required quantity. The actual procurement value falls in AT-002 regardless."
+    },
+    "preferred_supplier": {
+      "supplier": "Dell Enterprise Europe",
+      "status": "eligible",
+      "is_preferred": true,
+      "covers_delivery_country": true,
+      "is_restricted": false,
+      "policy_note": "Dell is a preferred supplier for Docking Stations in DE. Preferred status means Dell should be included in the comparison — it does not mandate single-source selection, particularly where AT-002 requires 2 quotes."
+    },
+    "restricted_suppliers": {
+      "SUP-0008_Computacenter_Devices": {
+        "restricted": false,
+        "note": "Computacenter is not restricted for Docking Stations. However, preferred=False and risk_score=34 (highest of eligible suppliers) — excluded from shortlist on risk grounds."
+      }
+    },
+    "category_rules_applied": [],
+    "geography_rules_applied": []
+  },
+
+  "supplier_shortlist": [
+    {
+      "rank": 1,
+      "supplier_id": "SUP-0007",
+      "supplier_name": "Bechtle Workplace Solutions",
+      "preferred": true,
+      "incumbent": true,
+      "pricing_tier_applied": "100–499 units",
+      "unit_price_eur": 148.80,
+      "total_price_eur": 35712.00,
+      "standard_lead_time_days": 26,
+      "expedited_lead_time_days": 18,
+      "expedited_unit_price_eur": 160.70,
+      "expedited_total_eur": 38568.00,
+      "quality_score": 82,
+      "risk_score": 19,
+      "esg_score": 72,
+      "policy_compliant": true,
+      "covers_delivery_country": true,
+      "recommendation_note": "Lowest total price at EUR 35,712. Incumbent supplier with established DE delivery capability. Preferred status confirmed. Both standard (26d) and expedited (18d) lead times exceed the 6-day requirement — see escalation."
+    },
+    {
+      "rank": 2,
+      "supplier_id": "SUP-0001",
+      "supplier_name": "Dell Enterprise Europe",
+      "preferred": true,
+      "incumbent": false,
+      "pricing_tier_applied": "100–499 units",
+      "unit_price_eur": 155.00,
+      "total_price_eur": 37200.00,
+      "standard_lead_time_days": 22,
+      "expedited_lead_time_days": 17,
+      "expedited_unit_price_eur": 167.40,
+      "expedited_total_eur": 40176.00,
+      "quality_score": 85,
+      "risk_score": 15,
+      "esg_score": 73,
+      "policy_compliant": true,
+      "covers_delivery_country": true,
+      "recommendation_note": "Requester's preferred supplier. Highest quality score (85) and lowest risk score (15) of eligible options. Total price EUR 37,200 — EUR 1,488 above Bechtle. Standard lead time 22d also infeasible; expedited 17d also infeasible for 6-day requirement."
+    },
+    {
+      "rank": 3,
+      "supplier_id": "SUP-0002",
+      "supplier_name": "HP Enterprise Devices",
+      "preferred": true,
+      "incumbent": false,
+      "pricing_tier_applied": "100–499 units",
+      "unit_price_eur": 153.45,
+      "total_price_eur": 36828.00,
+      "standard_lead_time_days": 23,
+      "expedited_lead_time_days": 19,
+      "expedited_unit_price_eur": 165.73,
+      "expedited_total_eur": 39775.20,
+      "quality_score": 83,
+      "risk_score": 26,
+      "esg_score": 66,
+      "policy_compliant": true,
+      "covers_delivery_country": true,
+      "recommendation_note": "Mid-range price at EUR 36,828. Higher risk score (26) than Bechtle and Dell. Expedited lead time (19d) does not meet the 6-day requirement."
+    }
+  ],
+
+  "suppliers_excluded": [
+    {
+      "supplier_id": "SUP-0008",
+      "supplier_name": "Computacenter Devices",
+      "reason": "preferred=False, risk_score=34 (highest of eligible set). Not policy-restricted for this category/country combination, but excluded from shortlist on risk grounds."
+    }
+  ],
+
+  "escalations": [
+    {
+      "escalation_id": "ESC-001",
+      "rule": "ER-001",
+      "trigger": "Budget is insufficient to fulfil the stated quantity at any compliant supplier price. Requester must confirm revised budget or reduced quantity before sourcing can proceed.",
+      "escalate_to": "Requester Clarification",
+      "blocking": true
+    },
+    {
+      "escalation_id": "ESC-002",
+      "rule": "AT-002",
+      "trigger": "Policy conflict: requester instruction 'no exception' cannot override AT-002. All valid contract values exceed EUR 25,000, requiring 2 quotes and Procurement Manager approval for any deviation.",
+      "escalate_to": "Procurement Manager",
+      "blocking": true
+    },
+    {
+      "escalation_id": "ESC-003",
+      "rule": "ER-004",
+      "trigger": "Lead time infeasible: required delivery 2026-03-20 (6 days). All suppliers' expedited lead times are 17–19 days. No compliant supplier can meet the stated deadline.",
+      "escalate_to": "Head of Category",
+      "blocking": true
+    }
+  ],
+
+  "recommendation": {
+    "status": "cannot_proceed",
+    "reason": "Three blocking issues prevent autonomous award: insufficient budget, policy conflict with requester's single-supplier instruction, and infeasible delivery timeline. All three require human resolution before sourcing can continue.",
+    "preferred_supplier_if_resolved": "Bechtle Workplace Solutions",
+    "preferred_supplier_rationale": "Bechtle is the incumbent and lowest-cost option at EUR 35,712. Dell (requester preference) is a valid alternative at EUR 37,200 with a higher quality score — both should be included in the compliant shortlist once budget is confirmed.",
+    "minimum_budget_required": 35712.00,
+    "minimum_budget_currency": "EUR"
+  },
+
+  "audit_trail": {
+    "policies_checked": ["AT-001", "AT-002", "CR-001", "ER-001", "ER-004"],
+    "supplier_ids_evaluated": ["SUP-0001", "SUP-0002", "SUP-0007", "SUP-0008"],
+    "pricing_tiers_applied": "100–499 units (EU region, EUR currency)",
+    "data_sources_used": ["requests.json", "suppliers.csv", "pricing.csv", "policies.json"],
+    "historical_awards_consulted": true,
+    "historical_award_note": "AWD-000009 through AWD-000011 show this request was previously awarded to Dell (rank 1, EUR 37,200) with Bechtle and HP as alternatives. Escalation was required (Head of Category). Prior decision used for pattern context only."
+  }
+}

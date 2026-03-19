@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Procurement Decision Explainer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    .prose h2 { font-size: 1.1rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.4rem; color: #1e3a5f; }
+    .prose p  { margin-bottom: 0.6rem; line-height: 1.6; }
+    .prose ul { list-style: disc; padding-left: 1.4rem; margin-bottom: 0.6rem; }
+    .prose li { margin-bottom: 0.3rem; line-height: 1.6; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans text-sm text-gray-800">
+
+<!-- Header -->
+<header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 bg-blue-700 rounded flex items-center justify-center text-white font-bold text-xs">CQ</div>
+    <span class="font-semibold text-gray-700 text-base">ChainIQ · Sourcing Intelligence</span>
+  </div>
+  <button id="btn-load"
+    class="bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold px-4 py-2 rounded transition">
+    Load Example
+  </button>
+</header>
+
+<!-- New Request Form -->
+<div class="max-w-screen-xl mx-auto px-4 pt-5">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+    <h2 class="font-semibold text-gray-700 text-sm mb-4">New Purchase Request</h2>
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Request Text <span class="text-red-500">*</span></label>
+        <textarea id="input-request-text" rows="3"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          placeholder="e.g. Need 500 laptops by April 15th, budget €400k, prefer Dell, delivery to Germany"></textarea>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Business Unit</label>
+          <input id="input-business-unit" type="text"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="e.g. Finance, IT, HR" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Country</label>
+          <input id="input-country" type="text"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="e.g. DE, CH, FR" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Currency</label>
+          <select id="input-currency"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="EUR">EUR</option>
+            <option value="CHF">CHF</option>
+            <option value="USD">USD</option>
+            <option value="GBP">GBP</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 pt-1">
+        <button id="btn-submit"
+          class="bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-5 py-2 rounded transition">
+          Submit
+        </button>
+        <div id="form-spinner" class="hidden flex items-center gap-2 text-xs text-gray-400">
+          <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+          </svg>
+          <span id="form-status-text">Parsing request…</span>
+        </div>
+        <div id="form-error" class="hidden text-xs text-red-600"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Parsed JSON viewer -->
+<div id="json-viewer" class="hidden max-w-screen-xl mx-auto px-4 pt-3">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+    <button id="btn-toggle-json" class="w-full flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wide">
+      <span>Parsed Request JSON</span>
+      <span id="json-toggle-icon" class="text-gray-400 text-base">▶</span>
+    </button>
+    <pre id="json-output" class="hidden mt-3 bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 overflow-x-auto whitespace-pre-wrap"></pre>
+  </div>
+</div>
+
+<!-- Main layout -->
+<main class="max-w-screen-xl mx-auto px-4 py-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+  <!-- LEFT PANEL -->
+  <section class="space-y-4">
+
+    <!-- Request card -->
+    <div id="card-request" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-3">Purchase Request</h2>
+      <div id="request-empty" class="text-gray-400 italic text-xs">No request loaded. Click "Load Example".</div>
+      <dl id="request-fields" class="hidden grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs"></dl>
+    </div>
+
+    <!-- Validation -->
+    <div id="card-validation" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide">Validation</h2>
+        <span id="badge-validation" class="hidden text-xs font-bold px-2 py-0.5 rounded-full"></span>
+      </div>
+      <div id="validation-empty" class="text-gray-400 italic text-xs">—</div>
+      <ul id="issues-list" class="hidden space-y-2"></ul>
+    </div>
+
+    <!-- Escalations -->
+    <div id="card-escalations" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-3">Escalations</h2>
+      <div id="escalations-empty" class="text-gray-400 italic text-xs">—</div>
+      <ul id="escalations-list" class="hidden space-y-2"></ul>
+    </div>
+
+  </section>
+
+  <!-- RIGHT PANEL -->
+  <section class="space-y-4">
+
+    <!-- Status banner -->
+    <div id="status-banner" class="hidden rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
+      <span id="status-icon" class="text-xl"></span>
+      <div>
+        <div id="status-title" class="font-bold text-sm"></div>
+        <div id="status-reason" class="text-xs opacity-80 mt-0.5"></div>
+      </div>
+    </div>
+
+    <!-- Supplier table -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-3">Supplier Shortlist</h2>
+      <div id="table-empty" class="text-gray-400 italic text-xs">—</div>
+      <div id="table-wrap" class="hidden overflow-x-auto">
+        <table class="w-full text-xs border-collapse">
+          <thead>
+            <tr class="bg-gray-50 text-gray-500 text-left">
+              <th class="px-2 py-2 font-semibold">#</th>
+              <th class="px-2 py-2 font-semibold">Supplier</th>
+              <th class="px-2 py-2 font-semibold text-center">Pref</th>
+              <th class="px-2 py-2 font-semibold text-right">Unit €</th>
+              <th class="px-2 py-2 font-semibold text-right">Total €</th>
+              <th class="px-2 py-2 font-semibold text-center">Qual</th>
+              <th class="px-2 py-2 font-semibold text-center">Risk</th>
+              <th class="px-2 py-2 font-semibold text-center">ESG</th>
+              <th class="px-2 py-2 font-semibold text-center">LT (std)</th>
+              <th class="px-2 py-2 font-semibold text-center">OK</th>
+            </tr>
+          </thead>
+          <tbody id="supplier-tbody" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Excluded suppliers -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide mb-2">Excluded Suppliers</h2>
+      <div id="excluded-empty" class="text-gray-400 italic text-xs">—</div>
+      <ul id="excluded-list" class="hidden space-y-1 text-xs text-gray-600"></ul>
+    </div>
+
+    <!-- Explain button + output -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-gray-500 text-xs uppercase tracking-wide">AI Explanation</h2>
+        <button id="btn-explain"
+          class="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-1.5 rounded transition"
+          disabled>
+          Explain Decision
+        </button>
+      </div>
+
+      <!-- Spinner -->
+      <div id="spinner" class="hidden flex items-center gap-2 text-xs text-gray-400 py-2">
+        <svg class="animate-spin h-4 w-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+        </svg>
+        Generating explanation…
+      </div>
+
+      <div id="explanation-empty" class="text-gray-400 italic text-xs">Click "Explain Decision" to generate an AI-powered breakdown.</div>
+      <div id="explanation-output" class="hidden prose max-w-none text-xs text-gray-700 leading-relaxed"></div>
+    </div>
+
+  </section>
+</main>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let loadedOutput = null;
+  let loadedRequestText = null;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const fmt = n => n != null ? Number(n).toLocaleString('en-DE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—';
+  const fmtInt = n => n != null ? Number(n).toLocaleString() : '—';
+
+  function severityClass(sev) {
+    if (sev === 'critical') return 'bg-red-100 border-red-300 text-red-800';
+    if (sev === 'high')     return 'bg-orange-100 border-orange-300 text-orange-800';
+    if (sev === 'medium')   return 'bg-yellow-100 border-yellow-300 text-yellow-800';
+    return 'bg-gray-100 border-gray-300 text-gray-700';
+  }
+
+  function scoreColor(score, invert = false) {
+    if (score == null) return 'text-gray-400';
+    const good = invert ? score <= 20 : score >= 80;
+    const mid  = invert ? score <= 35 : score >= 65;
+    return good ? 'text-green-700 font-semibold' : mid ? 'text-yellow-700' : 'text-red-700';
+  }
+
+  // ── Render functions ───────────────────────────────────────────────────────
+
+  function renderRequest(req, out) {
+    const interp = out.request_interpretation || {};
+    const fields = [
+      ['Request ID',    out.request_id],
+      ['Category',      `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
+      ['Quantity',      `${fmtInt(interp.quantity || req.quantity)} ${interp.unit_of_measure || req.unit_of_measure || ''}`],
+      ['Budget',        `€ ${fmt(interp.budget_amount || req.budget_amount)} ${interp.currency || req.currency || ''}`],
+      ['Delivery by',   interp.required_by_date || req.required_by_date || '—'],
+      ['Country',       interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
+      ['Pref. supplier',interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
+      ['Incumbent',     interp.incumbent_supplier || req.incumbent_supplier || '—'],
+    ];
+
+    const dl = $('request-fields');
+    dl.innerHTML = fields.map(([k, v]) =>
+      `<div class="contents"><dt class="text-gray-400 font-medium">${k}</dt><dd class="text-gray-800 font-semibold">${v}</dd></div>`
+    ).join('');
+    $('request-empty').classList.add('hidden');
+    dl.classList.remove('hidden');
+  }
+
+  function renderValidation(val) {
+    const badge = $('badge-validation');
+    badge.classList.remove('hidden');
+    if (val.completeness === 'pass') {
+      badge.textContent = 'PASS';
+      badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-800';
+    } else {
+      badge.textContent = 'FAIL';
+      badge.className = 'text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800';
+    }
+
+    const issues = val.issues_detected || [];
+    if (issues.length === 0) {
+      $('validation-empty').textContent = 'No issues detected.';
+      return;
+    }
+    $('validation-empty').classList.add('hidden');
+    const ul = $('issues-list');
+    ul.innerHTML = issues.map(i => `
+      <li class="border rounded p-2 text-xs ${severityClass(i.severity)}">
+        <div class="flex items-center gap-2 mb-0.5">
+          <span class="font-bold uppercase text-xs">${i.severity}</span>
+          <span class="font-semibold">${i.issue_id}</span>
+          <span class="opacity-70">${i.type}</span>
+        </div>
+        <p class="mb-1">${i.description}</p>
+        <p class="opacity-80"><span class="font-semibold">Action:</span> ${i.action_required}</p>
+      </li>`).join('');
+    ul.classList.remove('hidden');
+  }
+
+  function renderEscalations(escalations) {
+    if (!escalations || escalations.length === 0) {
+      $('escalations-empty').textContent = 'No escalations.';
+      return;
+    }
+    $('escalations-empty').classList.add('hidden');
+    const ul = $('escalations-list');
+    ul.innerHTML = escalations.map(e => `
+      <li class="border rounded p-2 text-xs ${e.blocking ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}">
+        <div class="flex items-center gap-2 mb-0.5">
+          ${e.blocking ? '<span class="bg-red-600 text-white text-xs font-bold px-1.5 py-0.5 rounded">BLOCKING</span>' : '<span class="bg-yellow-500 text-white text-xs font-bold px-1.5 py-0.5 rounded">INFO</span>'}
+          <span class="font-semibold">${e.escalation_id}</span>
+          <span class="text-gray-500">${e.rule}</span>
+        </div>
+        <p class="mb-0.5">${e.trigger}</p>
+        <p class="text-gray-600"><span class="font-semibold">→ Escalate to:</span> ${e.escalate_to}</p>
+      </li>`).join('');
+    ul.classList.remove('hidden');
+  }
+
+  function renderStatusBanner(rec) {
+    const banner = $('status-banner');
+    banner.classList.remove('hidden');
+    if (rec.status === 'can_proceed') {
+      banner.className = 'hidden rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm bg-green-50 border border-green-200';
+      banner.classList.remove('hidden');
+      $('status-icon').textContent = '✅';
+      $('status-title').textContent = 'Can Proceed';
+      $('status-title').className = 'font-bold text-sm text-green-800';
+    } else {
+      banner.className = 'hidden rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm bg-red-50 border border-red-200';
+      banner.classList.remove('hidden');
+      $('status-icon').textContent = '🚫';
+      $('status-title').textContent = 'Cannot Proceed';
+      $('status-title').className = 'font-bold text-sm text-red-800';
+    }
+    $('status-reason').textContent = rec.reason || '';
+  }
+
+  function renderSuppliers(shortlist) {
+    if (!shortlist || shortlist.length === 0) return;
+    $('table-empty').classList.add('hidden');
+    const tbody = $('supplier-tbody');
+    tbody.innerHTML = shortlist.map((s, idx) => {
+      const rowBg = idx === 0 ? 'bg-blue-50' : '';
+      return `<tr class="${rowBg} hover:bg-gray-50">
+        <td class="px-2 py-2 font-bold text-gray-500">${s.rank}</td>
+        <td class="px-2 py-2">
+          <div class="font-semibold text-gray-800">${s.supplier_name}</div>
+          <div class="text-gray-400 text-xs">${s.supplier_id}</div>
+        </td>
+        <td class="px-2 py-2 text-center">${s.preferred ? '⭐' : ''}${s.incumbent ? ' <span class="text-xs text-indigo-600 font-semibold">Inc.</span>' : ''}</td>
+        <td class="px-2 py-2 text-right font-mono">${fmt(s.unit_price_eur)}</td>
+        <td class="px-2 py-2 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
+        <td class="px-2 py-2 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
+        <td class="px-2 py-2 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
+        <td class="px-2 py-2 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
+        <td class="px-2 py-2 text-center">${s.standard_lead_time_days ?? '—'}d</td>
+        <td class="px-2 py-2 text-center">${s.policy_compliant ? '<span class="text-green-600 font-bold">✓</span>' : '<span class="text-red-500 font-bold">✗</span>'}</td>
+      </tr>`;
+    }).join('');
+    $('table-wrap').classList.remove('hidden');
+  }
+
+  function renderExcluded(excluded) {
+    if (!excluded || excluded.length === 0) {
+      $('excluded-empty').textContent = 'None.';
+      return;
+    }
+    $('excluded-empty').classList.add('hidden');
+    const ul = $('excluded-list');
+    ul.innerHTML = excluded.map(s =>
+      `<li class="flex gap-2"><span class="text-red-500 font-bold shrink-0">✗</span><span><span class="font-semibold">${s.supplier_name}</span> — ${s.reason}</span></li>`
+    ).join('');
+    ul.classList.remove('hidden');
+  }
+
+  function renderAll(data) {
+    const { output_json: out, request_json: req } = data;
+    renderRequest(req || {}, out);
+    renderValidation(out.validation || {});
+    renderEscalations(out.escalations || []);
+    renderStatusBanner(out.recommendation || {});
+    renderSuppliers(out.supplier_shortlist || []);
+    renderExcluded(out.suppliers_excluded || []);
+    $('btn-explain').disabled = false;
+    loadedOutput = out;
+    loadedRequestText = (req && req.request_text) || null;
+  }
+
+  // ── Event listeners ────────────────────────────────────────────────────────
+
+  // ── Submit new request flow ────────────────────────────────────────────────
+
+  async function submitRequest() {
+    const requestText = $('input-request-text').value.trim();
+    if (!requestText) {
+      $('input-request-text').focus();
+      return;
+    }
+
+    const timestamp = Date.now();
+    const metadata = {
+      request_id: `REQ-FORM-${timestamp}`,
+      created_at: new Date().toISOString(),
+      request_channel: 'portal',
+      status: 'new',
+    };
+    const businessUnit = $('input-business-unit').value.trim();
+    const country = $('input-country').value.trim();
+    const currency = $('input-currency').value;
+    if (businessUnit) metadata.business_unit = businessUnit;
+    if (country) metadata.country = country;
+    if (currency) metadata.currency = currency;
+
+    $('btn-submit').disabled = true;
+    $('form-error').classList.add('hidden');
+    $('form-spinner').classList.remove('hidden');
+    $('form-status-text').textContent = 'Parsing request…';
+
+    try {
+      // Step 1: parse free text → structured request JSON
+      const parseRes = await fetch('/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_text: requestText, metadata }),
+      });
+      if (!parseRes.ok) {
+        const err = await parseRes.json().catch(() => ({ detail: parseRes.statusText }));
+        throw new Error(err.detail || parseRes.statusText);
+      }
+      const { request_json } = await parseRes.json();
+
+      // Show parsed JSON
+      $('json-output').textContent = JSON.stringify(request_json, null, 2);
+      $('json-viewer').classList.remove('hidden');
+      $('json-output').classList.remove('hidden');
+      $('json-toggle-icon').textContent = '▼';
+
+      // Step 2: process structured request → output
+      $('form-status-text').textContent = 'Processing…';
+      const processRes = await fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_json }),
+      });
+      if (!processRes.ok) {
+        const err = await processRes.json().catch(() => ({ detail: processRes.statusText }));
+        throw new Error(err.detail || processRes.statusText);
+      }
+      const data = await processRes.json();
+      renderAll(data);
+    } catch (e) {
+      $('form-error').textContent = 'Error: ' + e.message;
+      $('form-error').classList.remove('hidden');
+    } finally {
+      $('form-spinner').classList.add('hidden');
+      $('btn-submit').disabled = false;
+    }
+  }
+
+  $('btn-submit').addEventListener('click', submitRequest);
+
+  $('btn-toggle-json').addEventListener('click', () => {
+    const pre = $('json-output');
+    const icon = $('json-toggle-icon');
+    if (pre.classList.contains('hidden')) {
+      pre.classList.remove('hidden');
+      icon.textContent = '▼';
+    } else {
+      pre.classList.add('hidden');
+      icon.textContent = '▶';
+    }
+  });
+
+  $('btn-load').addEventListener('click', async () => {
+    try {
+      const r = await fetch('/example');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      renderAll(data);
+    } catch (e) {
+      alert('Failed to load example: ' + e.message);
+    }
+  });
+
+  $('btn-explain').addEventListener('click', async () => {
+    if (!loadedOutput) return;
+    $('btn-explain').disabled = true;
+    $('spinner').classList.remove('hidden');
+    $('explanation-empty').classList.add('hidden');
+    $('explanation-output').classList.add('hidden');
+
+    try {
+      const r = await fetch('/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_json: loadedOutput, request_text: loadedRequestText }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+      }
+      const { explanation } = await r.json();
+      $('explanation-output').innerHTML = marked.parse(explanation);
+      $('explanation-output').classList.remove('hidden');
+    } catch (e) {
+      $('explanation-empty').textContent = 'Error: ' + e.message;
+      $('explanation-empty').classList.remove('hidden');
+    } finally {
+      $('spinner').classList.add('hidden');
+      $('btn-explain').disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

@@ -17,7 +17,7 @@ from groq import Groq
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
-DEFAULT_MODEL = "openai/gpt-oss-20b"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 # Carica dal CSV le coppie categoria valide che il modello potra` usare.
@@ -253,7 +253,6 @@ def extract_request(
     categories: list[dict[str, str]],
     enums: dict[str, list[str]],
 ) -> dict[str, Any]:
-    schema = build_schema(enums)
     prompt = build_prompt(request_text, metadata, categories, enums)
 
     response = client.chat.completions.create(
@@ -261,21 +260,14 @@ def extract_request(
         messages=[
             {
                 "role": "system",
-                "content": "You are a careful procurement data extraction assistant.",
+                "content": "You are a careful procurement data extraction assistant. Always respond with valid JSON only.",
             },
             {
                 "role": "user",
                 "content": prompt,
             },
         ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "procurement_request",
-                "strict": True,
-                "schema": schema,
-            },
-        },
+        response_format={"type": "json_object"},
     )
 
     return json.loads(response.choices[0].message.content)
@@ -303,6 +295,22 @@ def main() -> None:
     payload = extract_request(client, args.model, request_text, metadata, categories, enums)
     json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
+
+
+def parse_request_text(
+    request_text: str,
+    metadata: dict | None = None,
+    model: str = DEFAULT_MODEL,
+) -> dict[str, Any]:
+    """Callable entry point for use from app.py."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    client = Groq(api_key=api_key)
+    meta = build_default_metadata(metadata or {})
+    categories = load_categories()
+    enums = load_request_enums()
+    return extract_request(client, model, request_text, meta, categories, enums)
 
 
 if __name__ == "__main__":
