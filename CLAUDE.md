@@ -179,16 +179,17 @@ The explanation should cover: system design overview, clear reasoning logic, how
 | `POST` | `/chat` | `{ messages, request_json, issues, original_request_text?, field_provenance?, supplier_shortlist? }` → `{ reply, updated_request_json, updated_field_provenance, remaining_issues, resolved }` |
 | `POST` | `/results-chat` | `{ messages, output_json, request_json }` → `{ messages: [...], updated_request_json, has_field_updates }` — presents results in chat, handles Q&A + escalation resolution |
 
-### UI Flow (Chat-First Architecture)
+### UI Flow (Split-Screen Architecture)
 1. Initial state: full-viewport centered chat bar (ChatGPT-style), headline + subtext, optional Business Unit / Country / Currency pill inputs
 2. Submit (Enter or arrow button) → chat bar fades+slides out → loading overlay with pulsing dots
-3. Pipeline: `POST /parse` → `POST /validate` → (if invalid: enter chat mode to resolve issues) → `POST /process` → `POST /results-chat`
-4. **Results in chat**: LLM presents results as multi-message chat bubbles (recommendation, escalations, caveats). User stays in chat to ask follow-ups ("what are the alternatives?", "why was X excluded?", "tell me about the policies") or resolve escalations inline
-5. After escalation resolution via chat, silent `/process` recheck updates the output; if all clear, user is notified
-6. "← New Request" button in sticky top bar resets and restores the chat bar
-7. "Load example request" link loads demo data and presents via `/results-chat` in chat
+3. Pipeline: `POST /parse` → `POST /validate` → (if invalid: enter `#convo-phase` chat mode to resolve issues) → `POST /process` → `activateSplitScreen()` → `POST /results-chat`
+4. **Split-screen view** (`#split-phase`): left panel shows structured output (status banner, request details, supplier comparison with ranking table, alternatives, excluded suppliers, escalations), right panel has chat for Q&A and escalation resolution
+5. After escalation resolution via chat, silent `/process` recheck updates the output AND auto-refreshes the left panel via `refreshOutputPanel()`
+6. "← New Request" button in sticky top bar resets and restores the chat bar (clears both split-phase and convo-phase)
+7. "Load example request" link loads demo data and presents via split-screen with `/results-chat` in chat
 8. Dev panel (bottom-right corner, only visible at `?dev=true`): three buttons open dark modals — Parsed JSON, Output JSON, Provenance / Notes
-9. Old results page (`result-phase`) code remains but is unused in current flow
+9. Responsive: below 1024px (`lg` breakpoint), panels stack vertically — output on top (40vh max), chat below
+10. Old results page (`result-phase`) code remains but is unused in current flow
 
 ### Key Implementation Decisions & Constraints
 
@@ -216,10 +217,11 @@ The explanation should cover: system design overview, clear reasoning logic, how
 - **Chatbot max_tokens** raised to 800 (from 400) to accommodate detailed supplier comparisons in escalation resolution.
 - **Post-chat policy recheck** — after each `/chat` turn in refinement mode, frontend silently calls `/process` to detect cascade effects (new/removed escalations from field updates). Visual indicator "Rechecking policy…" shown during recheck.
 - **Frontend state** — `isResultsChat` flag controls whether `handleConvoSend` routes to `/results-chat` (results Q&A) or `/chat` (validation/escalation). Reset on "New Request".
+- **Split-screen layout** — `#split-phase` contains output panel (left, `#output-panel`) and chat panel (right, `#split-convo-messages`). `activateSplitScreen(out, req)` hides other phases, renders output, migrates messages from `#convo-messages`. `refreshOutputPanel(out, req)` re-renders the left panel (called after every `/process` recheck). Helper functions `getActiveMessageContainer()`, `getActiveInput()`, `getActiveSendBtn()`, `getActiveRecheckIndicator()` abstract over which phase is visible. `hideTypingIndicator()` removes ALL `#typing-wrapper` elements to prevent duplicates from container migrations.
+- **Output panel sections** — `buildStatusBannerHtml()`, `buildRequestDetailsHtml()`, `renderEscalationsPanelHtml()` return HTML strings (vs existing DOM-mutating versions). Reuses `renderTopRecommendationVisual()`, `renderAlternativesVisual()`, `renderExcludedVisual()` which already return HTML strings. "Show ranking" toggle uses `closest('section')` fallback for output panel context.
 
 ### What Still Needs to Be Built
-1. **Interactive chat components** — inline supplier cards, comparison tables, and escalation action buttons rendered in chat bubbles (planned next)
-2. **Prompt suggestions** — clickable suggestion chips after initial results presentation (e.g. "Show alternatives", "Why was X excluded?")
+1. **Prompt suggestions** — clickable suggestion chips after initial results presentation (e.g. "Show alternatives", "Why was X excluded?")
 3. **Historical context** — optionally use `historical_awards.csv` to inform rankings
 4. **Stretch goals** — confidence scoring, ESG weighting, PDF export, approval routing
 

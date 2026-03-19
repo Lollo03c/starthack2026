@@ -100,11 +100,43 @@
     .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
     .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
-    #convo-input {
+    #convo-input, #split-convo-input {
       min-height: 40px;
       max-height: 120px;
       resize: none;
       overflow-y: auto;
+    }
+
+    /* ── Split-screen layout ──────────────────────────────────── */
+    @keyframes panelFadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .panel-fade-in {
+      animation: panelFadeIn 0.4s ease forwards;
+    }
+    #output-panel section {
+      animation: panelFadeIn 0.35s ease forwards;
+    }
+    #output-panel section:nth-child(2) { animation-delay: 80ms; }
+    #output-panel section:nth-child(3) { animation-delay: 160ms; }
+    #output-panel section:nth-child(4) { animation-delay: 240ms; }
+    #output-panel section:nth-child(5) { animation-delay: 320ms; }
+
+    @media (max-width: 1023px) {
+      .split-responsive {
+        flex-direction: column !important;
+      }
+      .split-responsive > .split-output {
+        max-height: 40vh;
+        width: 100% !important;
+        border-right: none !important;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .split-responsive > .split-chat {
+        width: 100% !important;
+        flex: 1;
+      }
     }
   </style>
 </head>
@@ -216,6 +248,63 @@
           <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
         </svg>
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SPLIT-SCREEN PHASE  (output panel + chat, hidden by default)
+══════════════════════════════════════════════════════════════ -->
+<div id="split-phase" class="hidden h-screen flex flex-col bg-gray-50">
+
+  <!-- Top bar -->
+  <div class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
+      <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="split-status-pill" class="text-xs text-green-600 font-medium bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">Results ready</span>
+      <button id="btn-new-request-split"
+        class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition">
+        ← New Request
+      </button>
+    </div>
+  </div>
+
+  <!-- Split content -->
+  <div class="flex flex-1 overflow-hidden split-responsive">
+
+    <!-- Left: Output panel -->
+    <div id="output-panel" class="split-output w-1/2 overflow-y-auto border-r border-gray-200 p-6 space-y-6"></div>
+
+    <!-- Right: Chat panel -->
+    <div class="split-chat w-1/2 flex flex-col">
+      <div id="split-convo-messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-3"></div>
+
+      <!-- Policy recheck indicator -->
+      <div id="split-recheck-indicator" class="hidden text-center py-1 shrink-0">
+        <span class="text-xs text-blue-400 font-medium animate-pulse">Rechecking policy…</span>
+      </div>
+
+      <!-- Input bar -->
+      <div class="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
+        <div class="flex items-end gap-3">
+          <textarea
+            id="split-convo-input"
+            class="flex-1 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
+            placeholder="Ask about the results…"
+            rows="1"
+          ></textarea>
+          <button id="split-convo-send-btn"
+            class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
+            title="Send">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -413,7 +502,9 @@
   document.addEventListener('click', e => {
     const toggle = e.target.closest('[data-ranking-toggle]');
     if (!toggle) return;
-    const panel = toggle.closest('[data-analysis-section]')?.querySelector('[data-ranking-panel]');
+    // Look in closest section-like container (data-analysis-section or generic parent)
+    const parent = toggle.closest('[data-analysis-section]') || toggle.closest('section') || toggle.parentElement?.parentElement;
+    const panel = parent?.querySelector('[data-ranking-panel]');
     if (!panel) return;
     panel.classList.toggle('hidden');
     toggle.textContent = panel.classList.contains('hidden') ? 'Show ranking' : 'Hide ranking';
@@ -448,6 +539,11 @@
   async function transitionToChat() {
     $('result-phase').classList.add('hidden');
     $('result-phase').classList.remove('fade-in');
+
+    // Reset split phase
+    $('split-phase').classList.add('hidden');
+    $('output-panel').innerHTML = '';
+    $('split-convo-messages').innerHTML = '';
 
     // Reset convo phase
     $('convo-phase').classList.add('hidden');
@@ -486,7 +582,7 @@
   }
 
   function appendMessage(role, content) {
-    const container = $('convo-messages');
+    const container = getActiveMessageContainer();
     const wrapper = document.createElement('div');
     wrapper.className = (role === 'user' ? 'flex justify-end' : 'flex justify-start') + ' para-animate';
     const bubble = document.createElement('div');
@@ -499,7 +595,7 @@
   }
 
   function showTypingIndicator() {
-    const container = $('convo-messages');
+    const container = getActiveMessageContainer();
     const wrapper = document.createElement('div');
     wrapper.className = 'flex justify-start';
     wrapper.id = 'typing-wrapper';
@@ -512,8 +608,8 @@
   }
 
   function hideTypingIndicator() {
-    const el = document.getElementById('typing-wrapper');
-    if (el) el.remove();
+    // Remove all typing indicators (guards against duplicates from container moves)
+    document.querySelectorAll('#typing-wrapper').forEach(el => el.remove());
   }
 
   function buildOpeningMessage(issues) {
@@ -555,7 +651,7 @@
   }
 
   async function handleConvoSend() {
-    const input = $('convo-input');
+    const input = getActiveInput();
     const text = input.value.trim();
     if (!text) return;
 
@@ -581,7 +677,7 @@
     conversationMessages.push({ role: 'user', content: text });
 
     showTypingIndicator();
-    $('convo-send-btn').disabled = true;
+    getActiveSendBtn().disabled = true;
 
     try {
       // ── Results chat mode: Q&A + escalation resolution ──────────────────
@@ -609,7 +705,7 @@
         }
 
         hideTypingIndicator();
-        $('convo-send-btn').disabled = false;
+        getActiveSendBtn().disabled = false;
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -635,7 +731,7 @@
           devData.parsed = currentRequestJson;
 
           // Re-process silently to get updated output
-          $('recheck-indicator').classList.remove('hidden');
+          getActiveRecheckIndicator().classList.remove('hidden');
           try {
             const proc = await fetch('/process', {
               method: 'POST',
@@ -646,6 +742,7 @@
               const { output_json } = await proc.json();
               loadedOutput = output_json;
               devData.output = output_json;
+              refreshOutputPanel(output_json, currentRequestJson);
 
               const freshEscs = output_json.escalations || [];
               if (freshEscs.length === 0) {
@@ -663,10 +760,11 @@
             }
           } catch (_) { /* silent */ }
           finally {
-            $('recheck-indicator').classList.add('hidden');
+            getActiveRecheckIndicator().classList.add('hidden');
           }
         }
 
+        setTimeout(() => getActiveInput().focus(), 100);
         return;
       }
 
@@ -688,7 +786,7 @@
       });
 
       hideTypingIndicator();
-      $('convo-send-btn').disabled = false;
+      getActiveSendBtn().disabled = false;
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -714,7 +812,7 @@
 
       // Post-chat policy recheck (refinement mode only)
       if (isRefinementAfterOutput) {
-        $('recheck-indicator').classList.remove('hidden');
+        getActiveRecheckIndicator().classList.remove('hidden');
         try {
           const proc = await fetch('/process', {
             method: 'POST',
@@ -725,6 +823,7 @@
             const { output_json } = await proc.json();
             loadedOutput = output_json;
             devData.output = output_json;
+            refreshOutputPanel(output_json, currentRequestJson);
             const freshEscs = output_json.escalations || [];
 
             if (freshEscs.length === 0) {
@@ -755,21 +854,22 @@
           }
         } catch (_) { /* silent — don't block user */ }
         finally {
-          $('recheck-indicator').classList.add('hidden');
+          getActiveRecheckIndicator().classList.add('hidden');
         }
       }
     } catch (e) {
       console.error('Chat error:', e);
       hideTypingIndicator();
-      $('convo-send-btn').disabled = false;
+      getActiveSendBtn().disabled = false;
       appendMessage('assistant', 'Sorry, something went wrong: ' + (e.message || 'Unknown error') + '. Please try again.');
     }
   }
 
   async function proceedToProcess(requestJson, requestText) {
-    // Ensure convo-phase is visible (for happy path where no validation chat happened)
+    // Ensure convo-phase is visible for message display during loading
     const convoPhase = $('convo-phase');
-    if (convoPhase.classList.contains('hidden')) {
+    const splitVisible = !$('split-phase').classList.contains('hidden');
+    if (!splitVisible && convoPhase.classList.contains('hidden')) {
       convoPhase.classList.remove('hidden');
       convoPhase.classList.add('fade-in');
       conversationMessages = [{ role: 'user', content: originalRequestText }];
@@ -797,7 +897,11 @@
       currentRequestJson = returnedReq || requestJson;
       devData.parsed = currentRequestJson;
 
-      // 2. Get results presentation from LLM
+      // 2. Activate split screen with output panel
+      activateSplitScreen(output_json, currentRequestJson);
+
+      // 3. Get results presentation from LLM
+      showTypingIndicator();
       const chatRes = await fetch('/results-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -816,7 +920,7 @@
       }
       const data = await chatRes.json();
 
-      // 3. Display messages with natural delays
+      // 4. Display messages with natural delays
       for (let i = 0; i < data.messages.length; i++) {
         if (i > 0) {
           showTypingIndicator();
@@ -827,12 +931,12 @@
         conversationMessages.push({ role: 'assistant', content: data.messages[i] });
       }
 
-      // 4. Enter results chat mode
+      // 5. Enter results chat mode
       isResultsChat = true;
       isRefinementAfterOutput = false;
       conversationResolved = false;
       currentSupplierShortlist = output_json.supplier_shortlist || [];
-      setTimeout(() => $('convo-input').focus(), 100);
+      setTimeout(() => getActiveInput().focus(), 100);
 
     } catch (e) {
       hideTypingIndicator();
@@ -1219,6 +1323,136 @@
     </section>`;
   }
 
+  // ── Split-screen helpers ─────────────────────────────────────────────────
+  function getActiveMessageContainer() {
+    return $('split-phase').classList.contains('hidden') ? $('convo-messages') : $('split-convo-messages');
+  }
+
+  function getActiveInput() {
+    return $('split-phase').classList.contains('hidden') ? $('convo-input') : $('split-convo-input');
+  }
+
+  function getActiveSendBtn() {
+    return $('split-phase').classList.contains('hidden') ? $('convo-send-btn') : $('split-convo-send-btn');
+  }
+
+  function getActiveRecheckIndicator() {
+    return $('split-phase').classList.contains('hidden') ? $('recheck-indicator') : $('split-recheck-indicator');
+  }
+
+  function buildStatusBannerHtml(rec) {
+    if (!rec) return '';
+    const canProceed = rec.status === 'can_proceed';
+    const bgClass = canProceed ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200';
+    const icon = canProceed ? '✅' : '🚫';
+    const title = canProceed ? 'Can Proceed' : 'Cannot Proceed';
+    const titleColor = canProceed ? 'text-green-800' : 'text-red-800';
+    return `<div class="rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm ${bgClass}">
+      <span class="text-2xl">${icon}</span>
+      <div>
+        <div class="font-bold text-base ${titleColor}">${title}</div>
+        <div class="text-sm opacity-80 mt-0.5">${escapeHtml(rec.reason || '')}</div>
+      </div>
+    </div>`;
+  }
+
+  function buildRequestDetailsHtml(req, out) {
+    const interp = out.request_interpretation || {};
+    const fields = [
+      ['Request ID',      out.request_id],
+      ['Category',        `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
+      ['Quantity',        `${fmtInt(interp.quantity || req.quantity)} ${interp.unit_of_measure || req.unit_of_measure || ''}`],
+      ['Budget',          `€ ${fmt(interp.budget_amount || req.budget_amount)}`],
+      ['Delivery by',     interp.required_by_date || req.required_by_date || '—'],
+      ['Country',         interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
+      ['Pref. supplier',  interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
+      ['Incumbent',       interp.incumbent_supplier || req.incumbent_supplier || '—'],
+    ];
+    return `<section>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Request Details</div>
+      <dl class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        ${fields.map(([k, v]) => `<div class="contents"><dt class="text-gray-400 font-medium">${k}</dt><dd class="text-gray-800 font-semibold">${v}</dd></div>`).join('')}
+      </dl>
+    </section>`;
+  }
+
+  function renderEscalationsPanelHtml(escs) {
+    if (!escs || escs.length === 0) return '';
+    return `<section>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Escalations</div>
+      <div class="grid gap-3">
+        ${escs.map(e => `<div class="rounded-2xl border p-4 ${e.blocking ? 'border-red-200 bg-red-50/70' : 'border-yellow-200 bg-yellow-50/70'}">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-full px-2 py-0.5 text-[11px] font-bold ${e.blocking ? 'bg-red-600 text-white' : 'bg-yellow-500 text-white'}">${e.blocking ? 'BLOCKING' : 'INFO'}</span>
+            <span class="text-xs font-semibold text-gray-500">${escapeHtml(e.rule || e.escalation_id)}</span>
+            <span class="text-sm font-semibold text-gray-900">${escapeHtml(e.escalation_id)}</span>
+          </div>
+          <p class="mt-2 text-sm leading-relaxed text-gray-700">${escapeHtml(e.trigger)}</p>
+          <div class="mt-3 flex flex-wrap gap-2 text-xs">
+            <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Owner: ${escapeHtml(e.escalate_to || '—')}</span>
+            <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Rule: ${escapeHtml(e.rule || '—')}</span>
+          </div>
+        </div>`).join('')}
+      </div>
+    </section>`;
+  }
+
+  function refreshOutputPanel(out, req) {
+    const panel = $('output-panel');
+    if (!panel) return;
+
+    let html = '';
+    html += buildStatusBannerHtml(out.recommendation || {});
+    html += buildRequestDetailsHtml(req || {}, out);
+    html += `<section>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Comparison</div>
+      ${renderTopRecommendationVisual(out)}
+    </section>`;
+
+    const altHtml = renderAlternativesVisual(out);
+    if (altHtml) {
+      html += `<section>
+        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Alternatives</div>
+        ${altHtml}
+      </section>`;
+    }
+
+    const exclHtml = renderExcludedVisual(out);
+    if (exclHtml) {
+      html += `<section>
+        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Excluded Suppliers</div>
+        ${exclHtml}
+      </section>`;
+    }
+
+    html += renderEscalationsPanelHtml(out.escalations || []);
+
+    panel.innerHTML = html;
+  }
+
+  function activateSplitScreen(out, req) {
+    // Hide other phases
+    $('chat-phase').style.display = 'none';
+    $('convo-phase').classList.add('hidden');
+    $('result-phase').classList.add('hidden');
+
+    // Render output panel
+    refreshOutputPanel(out, req);
+
+    // Move existing messages to split panel (excluding typing indicators)
+    const splitMessages = $('split-convo-messages');
+    const convoMessages = $('convo-messages');
+    // Remove any typing indicators before copying
+    const typingEl = convoMessages.querySelector('#typing-wrapper');
+    if (typingEl) typingEl.remove();
+    splitMessages.innerHTML = convoMessages.innerHTML;
+    convoMessages.innerHTML = '';
+
+    // Show split phase
+    $('split-phase').classList.remove('hidden');
+    splitMessages.scrollTop = splitMessages.scrollHeight;
+  }
+
   // ── Explanation with staggered animation ─────────────────────────────────
   async function renderExplanationAnimated(explanation) {
     const container = $('explanation-container');
@@ -1376,14 +1610,14 @@
     phase.classList.add('fade-in');
 
     // Re-render all messages (including prior conversation if any)
-    const container = $('convo-messages');
+    const container = getActiveMessageContainer();
     container.innerHTML = '';
     for (const msg of conversationMessages) {
       appendMessage(msg.role, msg.content);
     }
 
     window.scrollTo({ top: 0, behavior: 'instant' });
-    setTimeout(() => $('convo-input').focus(), 100);
+    setTimeout(() => getActiveInput().focus(), 100);
   }
 
   // ── Main submit flow ──────────────────────────────────────────────────────
@@ -1477,13 +1711,15 @@
 
       hideLoading();
 
-      // Present example results in chat
+      // Set up convo-phase temporarily for message rendering before split
+      conversationMessages = [{ role: 'user', content: 'Load example request' }];
       const convoPhase = $('convo-phase');
       convoPhase.classList.remove('hidden');
-      convoPhase.classList.add('fade-in');
-      conversationMessages = [{ role: 'user', content: 'Load example request' }];
       $('convo-messages').innerHTML = '';
       appendMessage('user', 'Load example request');
+
+      // Activate split screen with example output
+      activateSplitScreen(data.output_json, data.request_json);
       showTypingIndicator();
 
       const chatRes = await fetch('/results-chat', {
@@ -1514,7 +1750,7 @@
       }
 
       isResultsChat = true;
-      setTimeout(() => $('convo-input').focus(), 100);
+      setTimeout(() => getActiveInput().focus(), 100);
 
     } catch (e) {
       hideLoading();
@@ -1551,8 +1787,29 @@
     await proceedToProcess(currentRequestJson, originalRequestText);
   }
 
+  // ── Split-screen input wiring ─────────────────────────────────────────────
+  $('split-convo-send-btn').addEventListener('click', handleConvoSend);
+
+  $('split-convo-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleConvoSend();
+    }
+  });
+
+  $('split-convo-input').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
   // ── New Request ───────────────────────────────────────────────────────────
   $('btn-new-request').addEventListener('click', async () => {
+    await transitionToChat();
+    $('request-input').value = '';
+    $('request-input').focus();
+  });
+
+  $('btn-new-request-split').addEventListener('click', async () => {
     await transitionToChat();
     $('request-input').value = '';
     $('request-input').focus();
