@@ -129,8 +129,9 @@ def _threshold_met(rule_text: str, ctx: RequestContext) -> bool:
             qty = ctx.quantity or 0
             return qty > threshold
         else:
-            value = ctx.budget_amount or 0
-            return value > threshold
+            if ctx.budget_amount is None:
+                return False  # no budget — skip value-threshold rule, noted as assumption
+            return ctx.budget_amount > threshold
 
     if below_match:
         threshold = float(below_match.group(1).replace(",", ""))
@@ -138,8 +139,9 @@ def _threshold_met(rule_text: str, ctx: RequestContext) -> bool:
             qty = ctx.quantity or 0
             return qty < threshold
         else:
-            value = ctx.budget_amount or 0
-            return value < threshold
+            if ctx.budget_amount is None:
+                return False  # no budget — skip value-threshold rule, noted as assumption
+            return ctx.budget_amount < threshold
 
     # No threshold — rule always applies to the matching category
     return True

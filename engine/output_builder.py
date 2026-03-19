@@ -160,12 +160,12 @@ def _detect_validation_issues(
             "Requester must provide the required quantity before sourcing can proceed.",
         ))
 
-    # 2. Missing budget
+    # 2. Missing budget — informational only; no constraint applied (recorded as assumption)
     if ctx.budget_amount is None:
         issues.append(ValidationIssue(
-            "missing_budget", "high",
-            "Request budget amount field is null.",
-            "Requester must provide a budget amount to enable supplier pricing validation.",
+            "missing_budget", "low",
+            "No budget amount specified.",
+            "No budget constraint applied — all suppliers included regardless of cost. Provide a budget for stricter validation.",
         ))
 
     # 3. Quantity text mismatch
@@ -321,7 +321,7 @@ def _collect_escalations(
 
     # Add escalations for validation issues that require human action
     for issue in validation_issues:
-        if issue.issue_type in {"budget_insufficient", "missing_quantity", "missing_budget"}:
+        if issue.issue_type in {"budget_insufficient", "missing_quantity"}:
             all_esc.append(Escalation(
                 rule_id="ER-001",
                 trigger=issue.description,
@@ -834,9 +834,9 @@ def _detect_uncertainties(
         uncertainties.append(Uncertainty(
             uncertainty_type="missing_field",
             source="budget_amount",
-            description="Budget amount is not specified.",
-            assumption_made="Approval tier based on lowest supplier price.",
-            impact="Budget sufficiency cannot be validated; approval threshold may be inaccurate.",
+            description="No budget was specified.",
+            assumption_made="No budget constraint applied — all suppliers included regardless of cost; value-threshold policy rules skipped.",
+            impact="Budget sufficiency cannot be validated; approval tier derived from lowest supplier price only.",
         ))
 
     # 3. Missing quantity

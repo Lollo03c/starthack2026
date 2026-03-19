@@ -114,18 +114,8 @@ def _handle_conditional(
     currency = threshold_cfg["currency"]
 
     if ctx.budget_amount is None:
-        # Cannot determine — escalate for clarification (non-blocking)
-        esc = Escalation(
-            rule_id="ER-001",
-            trigger=(
-                f"Supplier {supplier.supplier_name} has a value-conditional restriction "
-                f"(threshold: {currency} {threshold:,.0f}). "
-                "Budget amount is missing — cannot determine applicability."
-            ),
-            escalate_to="Requester",
-            blocking=False,
-        )
-        return CheckResult(passed=True, escalations=[esc])
+        # No budget specified — no constraint applied; recorded as assumption, not escalation
+        return CheckResult(passed=True)
 
     if ctx.budget_amount >= threshold:
         reason_text = entry.get("restriction_reason") or "Value-conditional restriction"
