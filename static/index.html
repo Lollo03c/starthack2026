@@ -318,6 +318,16 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
+     FORWARD PHASE  (success screen after forwarding to supplier)
+══════════════════════════════════════════════════════════════ -->
+<div id="forward-phase" class="hidden fixed inset-0 bg-white flex flex-col items-center justify-center gap-6 z-50">
+  <div class="text-green-500 text-6xl">✓</div>
+  <h2 class="text-2xl font-semibold text-gray-800">Request forwarded successfully!</h2>
+  <p class="text-gray-500 text-sm" id="forward-supplier-name"></p>
+  <button onclick="resetToInitial()" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">← New Request</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
      RESULT PHASE  (hidden until processing complete)
 ══════════════════════════════════════════════════════════════ -->
 <div id="result-phase" class="hidden">
@@ -540,6 +550,12 @@
     $('result-phase').classList.add('hidden');
     $('result-phase').classList.remove('fade-in');
 
+    // Reset forward phase
+    $('forward-phase').classList.add('hidden');
+    $('forward-supplier-name').textContent = '';
+    const fwdBtn = document.getElementById('forward-action-btn');
+    if (fwdBtn) fwdBtn.closest('.flex').remove();
+
     // Reset split phase
     $('split-phase').classList.add('hidden');
     $('output-panel').innerHTML = '';
@@ -725,6 +741,11 @@
           conversationMessages.push({ role: 'assistant', content: data.messages[i] });
         }
 
+        // Check if we can forward (no blocking escalations, no field updates needed)
+        if (!data.has_field_updates) {
+          checkAndShowForwardButton(devData.output);
+        }
+
         // Handle field updates (escalation resolution in results chat)
         if (data.has_field_updates) {
           currentRequestJson = data.updated_request_json;
@@ -749,12 +770,14 @@
                 const msg = 'Policy recheck complete — all escalations have been cleared. Your request is ready to proceed.';
                 appendMessage('assistant', msg);
                 conversationMessages.push({ role: 'assistant', content: msg });
+                checkAndShowForwardButton(output_json);
               } else {
                 const blocking = freshEscs.filter(e => e.blocking);
                 if (blocking.length === 0) {
                   const msg = `All blocking escalations resolved. ${freshEscs.length} non-blocking notice${freshEscs.length === 1 ? '' : 's'} remain.`;
                   appendMessage('assistant', msg);
                   conversationMessages.push({ role: 'assistant', content: msg });
+                  checkAndShowForwardButton(output_json);
                 }
               }
             }
@@ -1338,6 +1361,50 @@
 
   function getActiveRecheckIndicator() {
     return $('split-phase').classList.contains('hidden') ? $('recheck-indicator') : $('split-recheck-indicator');
+  }
+
+  // ── Forward button / success screen ──────────────────────────────────────
+  function checkAndShowForwardButton(outputJson) {
+    if (document.getElementById('forward-action-btn')) return;
+
+    const escalations = outputJson?.escalations || [];
+    const hasBlocking = escalations.some(e => e.blocking === true);
+    const status = outputJson?.recommendation?.status;
+
+    if (!hasBlocking && status !== 'cannot_proceed') {
+      const supplierName = outputJson?.recommendation?.recommended_supplier_name
+        || outputJson?.supplier_shortlist?.[0]?.supplier_name
+        || '';
+      const container = getActiveMessageContainer();
+      const wrapper = document.createElement('div');
+      wrapper.className = 'flex justify-start my-3';
+      wrapper.innerHTML = `
+        <button id="forward-action-btn"
+          onclick="showForwardScreen('${supplierName.replace(/'/g, "\\'")}')"
+          class="px-5 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition shadow-sm text-sm">
+          Forward request to supplier →
+        </button>`;
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function showForwardScreen(supplierName) {
+    $('split-phase').classList.add('hidden');
+    $('forward-phase').classList.remove('hidden');
+    if (supplierName) {
+      $('forward-supplier-name').textContent = `Forwarded to: ${supplierName}`;
+    }
+  }
+
+  function resetToInitial() {
+    $('forward-phase').classList.add('hidden');
+    $('forward-supplier-name').textContent = '';
+    const btn = document.getElementById('forward-action-btn');
+    if (btn) btn.closest('.flex').remove();
+    transitionToChat();
+    $('request-input').value = '';
+    $('request-input').focus();
   }
 
   function buildStatusBannerHtml(rec) {
