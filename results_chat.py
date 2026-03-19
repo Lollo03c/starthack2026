@@ -274,7 +274,28 @@ def _apply_resolution_heuristics(
         "we have approve from head of category",
         "head of category approved",
     ]
-    if any(phrase in text for phrase in approved_phrases):
+    # Broader approval patterns — catch general confirmations like
+    # "I have all approval decision I need", "approval granted", etc.
+    general_approval_phrases = [
+        "all approval",
+        "approval granted",
+        "approval confirmed",
+        "i have approval",
+        "we have approval",
+        "have the approval",
+        "got approval",
+        "approval is granted",
+        "approval decision",
+        "i approve",
+        "we approve",
+        "approved",
+        "i confirm",
+        "i acknowledge",
+        "acknowledged",
+    ]
+    has_specific_approval = any(phrase in text for phrase in approved_phrases)
+    has_general_approval = any(phrase in text for phrase in general_approval_phrases)
+    if has_specific_approval or has_general_approval:
         if any(e.get("rule") == "ER-003" for e in escalations):
             overrides["threshold_exceeded"] = True
         if any(e.get("rule") == "ER-004" for e in escalations):
