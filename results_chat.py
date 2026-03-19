@@ -4,6 +4,7 @@ escalation resolution within the same chat flow.
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -76,6 +77,8 @@ When the user wants to resolve an escalation, set field_updates:
 - ER-005 (data_residency): remove constraint → {"data_residency_constraint": false}; override → {"escalation_overrides": {"data_residency": true}}
 - ER-006 (capacity_risk): override → {"escalation_overrides": {"single_supplier_risk": true}}
 - ER-008 (usd_compliance): change currency → {"currency": "<new>"}; override → {"escalation_overrides": {"usd_compliance": true}}
+- ER-009 (mandatory_supplier_conflict): remove the exclusive supplier constraint → {"supplier_must_use": false}; switch supplier → {"preferred_supplier_mentioned": "<name>"}; manual exception workflow → {"escalation_overrides": {"mandatory_supplier_conflict": true}}
+- ER-010 (alternative_supplier_approval_required): explicitly approve another ranked provider → {"supplier_must_use": false, "preferred_supplier_mentioned": "<approved ranked supplier>"}
 
 After resolving an escalation, your response MUST contain EXACTLY these messages:
 1. Acknowledge the resolved escalation (1 sentence).
@@ -208,12 +211,13 @@ def run_results_chat(
         result_messages = [result_messages]
 
     field_updates = raw.get("field_updates", {})
+    field_updates = _apply_resolution_heuristics(field_updates, messages, output_json, request_json)
 
     # Merge field updates into request_json
     allowed = {
         "quantity", "budget_amount", "required_by_date", "category_l1",
         "category_l2", "delivery_countries", "currency",
-        "preferred_supplier_mentioned", "incumbent_supplier",
+        "preferred_supplier_mentioned", "supplier_must_use", "incumbent_supplier",
         "unit_of_measure", "esg_requirement", "data_residency_constraint",
         "escalation_overrides",
     }
@@ -237,3 +241,74 @@ def run_results_chat(
         "updated_request_json": updated_request,
         "has_field_updates": has_updates,
     }
+
+
+def _apply_resolution_heuristics(
+    field_updates: dict,
+    messages: list[dict],
+    output_json: dict,
+    request_json: dict,
+) -> dict:
+    merged = dict(field_updates or {})
+    latest_user_text = ""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            latest_user_text = str(message.get("content") or "")
+            break
+    if not latest_user_text:
+        return merged
+
+    text = latest_user_text.lower()
+    escalations = output_json.get("escalations", []) or []
+    shortlist = output_json.get("supplier_shortlist", []) or []
+    top_alternative = shortlist[0].get("supplier_name") if shortlist else None
+    current_preferred = request_json.get("preferred_supplier_mentioned")
+
+    overrides = dict(merged.get("escalation_overrides") or {})
+
+    approved_phrases = [
+        "approved by head of category",
+        "approve from head of category",
+        "approval from head of category",
+        "we have approval from head of category",
+        "we have approve from head of category",
+        "head of category approved",
+    ]
+    if any(phrase in text for phrase in approved_phrases):
+        if any(e.get("rule") == "ER-003" for e in escalations):
+            overrides["threshold_exceeded"] = True
+        if any(e.get("rule") == "ER-004" for e in escalations):
+            overrides["insufficient_quotes"] = True
+
+    switch_phrases = [
+        "allow the switch",
+        "approve the switch",
+        "we allow the switch",
+        "allow switch",
+        "switch is allowed",
+        "use another provider",
+        "ship with another provider",
+        "approve another provider",
+    ]
+    if any(phrase in text for phrase in switch_phrases):
+        if any(e.get("rule") == "ER-010" for e in escalations):
+            merged["supplier_must_use"] = False
+            if "preferred_supplier_mentioned" not in merged and top_alternative:
+                merged["preferred_supplier_mentioned"] = top_alternative
+            if top_alternative and merged.get("preferred_supplier_mentioned") == current_preferred:
+                merged["preferred_supplier_mentioned"] = top_alternative
+
+    if overrides:
+        merged["escalation_overrides"] = overrides
+
+    # If the user cleared the mandate but the preferred supplier still points
+    # at the old blocked supplier, switch to the top ranked approved fallback.
+    if (
+        merged.get("supplier_must_use") is False
+        and top_alternative
+        and merged.get("preferred_supplier_mentioned", current_preferred) == current_preferred
+        and any(e.get("rule") == "ER-010" for e in escalations)
+    ):
+        merged["preferred_supplier_mentioned"] = top_alternative
+
+    return merged

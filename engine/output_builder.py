@@ -34,7 +34,7 @@ def build_output(
     """Assemble the final output JSON matching the example schema."""
 
     # --- Validation issues ----------------------------------------------------
-    validation_issues = _detect_validation_issues(ctx, scored, eliminated)
+    validation_issues = _detect_validation_issues(ctx, scored, eliminated, data)
     # Assign V-xxx IDs: critical first, then high, then medium
     _assign_validation_ids(validation_issues)
 
@@ -120,6 +120,7 @@ def _build_interpretation(ctx: RequestContext) -> dict:
         "data_residency_required": ctx.data_residency_constraint,
         "esg_requirement": ctx.esg_requirement,
         "preferred_supplier_stated": ctx.preferred_supplier_mentioned,
+        "supplier_must_use": ctx.supplier_must_use,
         "preferred_supplier_resolved_id": ctx.preferred_supplier_id_resolved,
         "incumbent_supplier": ctx.incumbent_supplier,
         "quantity_discrepancy_detected": ctx.quantity_discrepancy,
@@ -149,6 +150,7 @@ def _detect_validation_issues(
     ctx: RequestContext,
     scored: list[ScoredSupplier],
     eliminated: list[SupplierTrace],
+    data: DataContext,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -237,8 +239,12 @@ def _detect_validation_issues(
                 ))
                 break
 
+    mandated_issue = _detect_mandated_supplier_issue(ctx, scored, eliminated, data)
+    if mandated_issue:
+        issues.append(mandated_issue)
+
     # 8. No compliant suppliers
-    if not scored:
+    if not scored and not mandated_issue:
         issues.append(ValidationIssue(
             "no_compliant_suppliers", "critical",
             f"No suppliers passed all Phase 1 filters for "
@@ -248,6 +254,121 @@ def _detect_validation_issues(
         ))
 
     return issues
+
+
+def _detect_mandated_supplier_issue(
+    ctx: RequestContext,
+    scored: list[ScoredSupplier],
+    eliminated: list[SupplierTrace],
+    data: DataContext,
+) -> ValidationIssue | None:
+    if not ctx.supplier_must_use or not ctx.preferred_supplier_mentioned:
+        return None
+
+    preferred_name = ctx.preferred_supplier_mentioned
+    top_alternative = scored[0].supplier_row.supplier_name if scored else None
+
+    if not ctx.preferred_supplier_id_resolved:
+        return ValidationIssue(
+            "mandatory_supplier_alternative_approval_required" if top_alternative else "mandated_supplier_unresolved",
+            "critical",
+            (
+                f"The request mandates supplier '{preferred_name}', but that supplier "
+                "could not be matched to a known supplier in the dataset."
+                + (
+                    f" The top ranked alternative is '{top_alternative}', but explicit user approval is required before shipping with another provider."
+                    if top_alternative else ""
+                )
+            ),
+            (
+                f"Requester must explicitly approve shipping with '{top_alternative}' or another ranked provider, "
+                "or confirm the mandated supplier name exactly."
+                if top_alternative else
+                "Requester must confirm the supplier name exactly or remove the exclusive supplier constraint."
+            ),
+        )
+
+    for supplier in scored:
+        if supplier.supplier_row.supplier_id == ctx.preferred_supplier_id_resolved:
+            return None
+
+    preferred_rows = data.suppliers_by_id.get(ctx.preferred_supplier_id_resolved, [])
+    if not preferred_rows:
+        return ValidationIssue(
+            "mandated_supplier_unresolved", "critical",
+            (
+                f"The request mandates supplier '{preferred_name}', but no supplier "
+                "record is available for evaluation."
+            ),
+            "Requester must confirm the supplier name exactly or remove the exclusive supplier constraint.",
+        )
+
+    category_rows = [
+        row for row in preferred_rows
+        if row.category_l1 == ctx.category_l1 and row.category_l2 == ctx.category_l2
+    ]
+    if not category_rows:
+        return ValidationIssue(
+            "mandatory_supplier_alternative_approval_required" if top_alternative else "mandated_supplier_category_mismatch",
+            "critical",
+            (
+                f"The request mandates supplier '{preferred_name}', but that supplier "
+                f"does not offer {ctx.category_l1}/{ctx.category_l2} in the supplier master."
+                + (
+                    f" The top ranked alternative is '{top_alternative}', but explicit user approval is required before shipping with another provider."
+                    if top_alternative else ""
+                )
+            ),
+            (
+                f"Requester must explicitly approve shipping with '{top_alternative}' or another ranked provider, "
+                "or change the mandated supplier."
+                if top_alternative else
+                "Requester must either choose a different supplier or remove the exclusive supplier constraint."
+            ),
+        )
+
+    preferred_trace = next(
+        (t for t in eliminated if t.supplier_id == ctx.preferred_supplier_id_resolved),
+        None,
+    )
+    if preferred_trace:
+        reason = preferred_trace.reason or "The mandated supplier failed policy validation."
+        return ValidationIssue(
+            "mandatory_supplier_alternative_approval_required" if top_alternative else "mandated_supplier_unavailable",
+            "critical",
+            (
+                f"The request mandates supplier '{preferred_name}', but that supplier "
+                f"cannot fulfill the request as configured. {reason}"
+                + (
+                    f" The top ranked alternative is '{top_alternative}', but explicit user approval is required before shipping with another provider."
+                    if top_alternative else ""
+                )
+            ),
+            (
+                f"Requester must explicitly approve shipping with '{top_alternative}' or another ranked provider, "
+                "or keep the original supplier mandate and stop the request."
+                if top_alternative else
+                "Requester must change the supplier, relax the constraint, or explicitly resolve the blocking policy issue."
+            ),
+        )
+
+    return ValidationIssue(
+        "mandatory_supplier_alternative_approval_required" if top_alternative else "mandated_supplier_unavailable",
+        "critical",
+        (
+            f"The request mandates supplier '{preferred_name}', but no compliant offer "
+            "could be constructed for that supplier."
+            + (
+                f" The top ranked alternative is '{top_alternative}', but explicit user approval is required before shipping with another provider."
+                if top_alternative else ""
+            )
+        ),
+        (
+            f"Requester must explicitly approve shipping with '{top_alternative}' or another ranked provider."
+            if top_alternative else
+            "Requester must change the supplier, relax the constraint, or explicitly resolve the blocking policy issue."
+        ),
+    )
 
 
 def _detect_policy_conflicts(
@@ -342,6 +463,24 @@ def _collect_escalations(
                 escalate_to="Head of Category",
                 blocking=True,
             ))
+        elif issue.issue_type in {
+            "mandated_supplier_unresolved",
+            "mandated_supplier_category_mismatch",
+            "mandated_supplier_unavailable",
+        }:
+            all_esc.append(Escalation(
+                rule_id="ER-009",
+                trigger=issue.description,
+                escalate_to="Requester",
+                blocking=True,
+            ))
+        elif issue.issue_type == "mandatory_supplier_alternative_approval_required":
+            all_esc.append(Escalation(
+                rule_id="ER-010",
+                trigger=issue.description,
+                escalate_to="Requester",
+                blocking=True,
+            ))
 
     # --- A1: ER-003 (value_exceeds_threshold) — high-value contracts ----------
     if scored:
@@ -379,21 +518,20 @@ def _collect_escalations(
             ))
 
         # Approval-threshold escalation when required quotes > 1 and single-source conflict
-        if threshold and threshold.quotes_required > 1:
-            text_lower = ctx.request_text.lower() if ctx.request_text else ""
-            single_source_phrases = ["no exception", "only", "exclusively", "no alternative", "sole source"]
-            if any(p in text_lower for p in single_source_phrases):
-                all_esc.append(Escalation(
-                    rule_id=threshold.rule_id,
-                    trigger=(
-                        f"Approval threshold {threshold.rule_id} requires "
-                        f"{threshold.quotes_required} quotes. Request text instruction "
-                        f"conflicts with this mandatory requirement. "
-                        f"Deviation requires approval from: {threshold.deviation_approval}."
-                    ),
-                    escalate_to=threshold.deviation_approval or "Procurement Manager",
-                    blocking=True,
-                ))
+        if threshold and threshold.quotes_required > 1 and ctx.supplier_must_use:
+            supplier_name = ctx.preferred_supplier_mentioned or "the mandated supplier"
+            all_esc.append(Escalation(
+                rule_id="ER-003",
+                trigger=(
+                    f"Approval threshold {threshold.rule_id} requires "
+                    f"{threshold.quotes_required} quotes. The request mandates "
+                    f"single-supplier sourcing with '{supplier_name}', which "
+                    f"conflicts with this mandatory requirement. "
+                    f"Deviation requires approval from: {threshold.deviation_approval}."
+                ),
+                escalate_to=threshold.deviation_approval or "Procurement Manager",
+                blocking=True,
+            ))
 
     # --- A2: ER-005 (data_residency_constraint_conflict) ----------------------
     if not scored and ctx.data_residency_constraint:
@@ -464,6 +602,8 @@ def _apply_escalation_overrides(escalations: list[Escalation], overrides: dict) 
         "single_supplier_risk": "ER-006",
         "data_residency": "ER-005",
         "usd_compliance": "ER-008",
+        "mandatory_supplier_conflict": "ER-009",
+        "alternative_supplier_approved": "ER-010",
     }
     rules_to_skip = {rule_id for key, rule_id in _override_map.items() if overrides.get(key)}
     if not rules_to_skip:
@@ -543,7 +683,10 @@ def _summarise_blocking(
     for e in blocking_esc:
         if e.trigger not in " ".join(parts):
             parts.append(e.trigger)
-    if not scored:
+    if not scored and not any(
+        ("mandates supplier" in part.lower()) or ("mandatory" in part.lower())
+        for part in parts
+    ):
         parts.append("No compliant suppliers found.")
     return " | ".join(parts[:3]) if parts else "Blocking issues prevent autonomous award."
 
@@ -656,7 +799,92 @@ def _build_policy_evaluation(
     }
     if pref_dict:
         result["preferred_supplier"] = pref_dict
+    mandated_supplier = _build_mandated_supplier_summary(ctx, scored, eliminated, data)
+    if mandated_supplier:
+        result["mandated_supplier"] = mandated_supplier
     return result
+
+
+def _build_mandated_supplier_summary(
+    ctx: RequestContext,
+    scored: list[ScoredSupplier],
+    eliminated: list[SupplierTrace],
+    data: DataContext,
+) -> dict | None:
+    if not ctx.preferred_supplier_mentioned:
+        return None
+
+    preferred_name = ctx.preferred_supplier_mentioned
+    summary = {
+        "supplier": preferred_name,
+        "must_use": ctx.supplier_must_use,
+        "supplier_id": ctx.preferred_supplier_id_resolved,
+        "status": "advisory",
+        "headline": "",
+        "detail": "",
+        "policy_conflict": False,
+        "fallback_alternatives_available": bool(scored),
+    }
+
+    if not ctx.supplier_must_use:
+        summary["headline"] = f"{preferred_name} was captured as a supplier preference."
+        summary["detail"] = "This supplier was treated as a preference, not an exclusive sourcing instruction."
+        return summary
+
+    if not ctx.preferred_supplier_id_resolved:
+        summary["status"] = "unresolved"
+        summary["headline"] = f"{preferred_name} is mandatory, but the supplier could not be matched."
+        summary["detail"] = "No supplier record matched the stated name, so the request cannot be awarded until the supplier is confirmed or the constraint is removed."
+        summary["policy_conflict"] = True
+        return summary
+
+    for supplier in scored:
+        if supplier.supplier_row.supplier_id == ctx.preferred_supplier_id_resolved:
+            summary["status"] = "satisfied"
+            summary["headline"] = f"{preferred_name} is mandatory and remains the only compliant supplier under consideration."
+            summary["detail"] = "All alternative suppliers were excluded because the request explicitly disallowed other providers."
+            return summary
+
+    preferred_rows = data.suppliers_by_id.get(ctx.preferred_supplier_id_resolved, [])
+    category_rows = [
+        row for row in preferred_rows
+        if row.category_l1 == ctx.category_l1 and row.category_l2 == ctx.category_l2
+    ]
+    preferred_trace = next(
+        (t for t in eliminated if t.supplier_id == ctx.preferred_supplier_id_resolved),
+        None,
+    )
+
+    summary["status"] = "conflict"
+    summary["policy_conflict"] = True
+    if not category_rows:
+        summary["headline"] = f"{preferred_name} is mandatory, but does not provide {ctx.category_l1}/{ctx.category_l2}."
+        summary["detail"] = (
+            f"No supplier record for the mandated supplier matches this category."
+            + (
+                f" A ranked alternative shortlist is available, but explicit requester approval is required before shipping with another provider."
+                if scored else
+                " The request cannot proceed unless the supplier constraint changes."
+            )
+        )
+    elif preferred_trace:
+        summary["headline"] = f"{preferred_name} is mandatory, but failed sourcing or policy checks."
+        summary["detail"] = (
+            preferred_trace.reason or "The mandated supplier could not satisfy the current request and policy constraints."
+        )
+        if scored:
+            summary["detail"] += " A ranked alternative shortlist is available, but explicit requester approval is required before shipping with another provider."
+    else:
+        summary["headline"] = f"{preferred_name} is mandatory, but no compliant offer was available."
+        summary["detail"] = (
+            "The engine could not construct a compliant priced offer for the mandated supplier."
+            + (
+                " A ranked alternative shortlist is available, but explicit requester approval is required before shipping with another provider."
+                if scored else ""
+            )
+        )
+
+    return summary
 
 
 def _collect_triggered_rules(

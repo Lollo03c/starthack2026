@@ -9,6 +9,8 @@ Usage:
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from engine.data_loader import load_data
 from engine.types import DataContext
 
@@ -40,6 +42,15 @@ def process_request(request_dict: dict, data: DataContext) -> dict:
 
     # Phase 1: deterministic filter pipeline
     passed, eliminated = run_filter_pipeline(candidates, ctx, data)
+
+    # If the user mandated a supplier but that path yields no supplier,
+    # build an alternative shortlist without silently dropping the mandate.
+    if ctx.supplier_must_use and not passed:
+        relaxed_ctx = replace(ctx, supplier_must_use=False, mandated_supplier_fallback_used=True)
+        alt_passed, alt_eliminated = run_filter_pipeline(candidates, relaxed_ctx, data)
+        if alt_passed:
+            ctx.mandated_supplier_fallback_used = True
+            passed, eliminated = alt_passed, alt_eliminated
 
     # Phase 2: scoring and ranking
     scored = score_and_rank(passed, ctx, data)

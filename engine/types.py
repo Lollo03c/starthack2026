@@ -196,6 +196,7 @@ class RequestContext:
     unit_of_measure: str
     required_by_date: date | None
     preferred_supplier_mentioned: str | None
+    supplier_must_use: bool
     incumbent_supplier: str | None
     delivery_countries: list[str]
     data_residency_constraint: bool
@@ -205,6 +206,7 @@ class RequestContext:
     days_until_required: int | None = None
     preferred_supplier_id_resolved: str | None = None
     incumbent_supplier_id_resolved: str | None = None
+    mandated_supplier_fallback_used: bool = False
 
     # LLM-populated (default empty / False — populated only if LLM succeeds)
     structured_checks: list[StructuredCheck] = field(default_factory=list)

@@ -1036,6 +1036,9 @@
 
   function renderRequestDetails(req, out) {
     const interp = out.request_interpretation || {};
+    const supplierConstraint = interp.supplier_must_use
+      ? 'Must use named supplier only'
+      : 'Preference only';
     const fields = [
       ['Request ID',      out.request_id],
       ['Category',        `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
@@ -1044,6 +1047,7 @@
       ['Delivery by',     interp.required_by_date || req.required_by_date || '—'],
       ['Country',         interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
       ['Pref. supplier',  interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
+      ['Supplier rule',   supplierConstraint],
       ['Incumbent',       interp.incumbent_supplier || req.incumbent_supplier || '—'],
     ];
     const dl = $('request-fields');
@@ -1057,7 +1061,7 @@
     quantity: 'Quantity', budget_amount: 'Budget', category_l1: 'Category (L1)',
     category_l2: 'Category (L2)', delivery_countries: 'Delivery Countries',
     required_by_date: 'Required By', currency: 'Currency', unit_of_measure: 'Unit of Measure',
-    preferred_supplier_mentioned: 'Preferred Supplier', incumbent_supplier: 'Incumbent',
+    preferred_supplier_mentioned: 'Preferred Supplier', supplier_must_use: 'Supplier Must Use', incumbent_supplier: 'Incumbent',
     esg_requirement: 'ESG Requirement', data_residency_constraint: 'Data Residency',
   };
 
@@ -1271,6 +1275,33 @@
     </div>`;
   }
 
+  function renderMandatedSupplierVisual(out) {
+    const mandated = out.policy_evaluation?.mandated_supplier;
+    if (!mandated) return '';
+
+    const isConflict = mandated.must_use && mandated.status !== 'satisfied';
+    const boxClass = isConflict
+      ? 'border-red-200 bg-red-50/80'
+      : mandated.must_use
+        ? 'border-blue-200 bg-blue-50/80'
+        : 'border-gray-200 bg-gray-50/80';
+    const badgeClass = isConflict
+      ? 'bg-red-600 text-white'
+      : mandated.must_use
+        ? 'bg-blue-600 text-white'
+        : 'bg-gray-700 text-white';
+    const badgeText = mandated.must_use ? 'MANDATED SUPPLIER' : 'SUPPLIER PREFERENCE';
+
+    return `<div class="rounded-2xl border p-4 ${boxClass}">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="rounded-full px-2.5 py-1 text-[11px] font-bold ${badgeClass}">${badgeText}</span>
+        <span class="text-sm font-semibold text-gray-900">${escapeHtml(mandated.supplier || '—')}</span>
+      </div>
+      <p class="mt-2 text-sm font-semibold text-gray-900">${escapeHtml(mandated.headline || '')}</p>
+      <p class="mt-1 text-sm leading-relaxed text-gray-700">${escapeHtml(mandated.detail || '')}</p>
+    </div>`;
+  }
+
   function renderAlternativesVisual(out) {
     const shortlist = out.supplier_shortlist || [];
     if (shortlist.length <= 1) return '';
@@ -1370,6 +1401,7 @@
   }
 
   function renderSectionVisual(title, out) {
+    if (title === 'Mandated Supplier') return renderMandatedSupplierVisual(out);
     if (title === 'Top Recommendation') return renderTopRecommendationVisual(out);
     if (title === 'Alternatives') return renderAlternativesVisual(out);
     if (title === 'Excluded Suppliers') return renderExcludedVisual(out);
@@ -1478,6 +1510,9 @@
 
   function buildRequestDetailsHtml(req, out) {
     const interp = out.request_interpretation || {};
+    const supplierConstraint = interp.supplier_must_use
+      ? 'Must use named supplier only'
+      : 'Preference only';
     const fields = [
       ['Request ID',      out.request_id],
       ['Category',        `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
@@ -1486,6 +1521,7 @@
       ['Delivery by',     interp.required_by_date || req.required_by_date || '—'],
       ['Country',         interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
       ['Pref. supplier',  interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
+      ['Supplier rule',   supplierConstraint],
       ['Incumbent',       interp.incumbent_supplier || req.incumbent_supplier || '—'],
     ];
     return `<section>
@@ -1522,6 +1558,13 @@
     if (!panel) return;
 
     let html = '';
+    const mandatedHtml = renderMandatedSupplierVisual(out);
+    if (mandatedHtml) {
+      html += `<section>
+        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Constraint</div>
+        ${mandatedHtml}
+      </section>`;
+    }
     html += buildStatusBannerHtml(out.recommendation || {});
     html += buildRequestDetailsHtml(req || {}, out);
     html += `<section>
@@ -1643,6 +1686,14 @@
     }
     if (rule === 'ER-008' || trigger.includes('usd')) {
       return 'Options:\n• **Change currency** (e.g. to EUR or CHF)\n• **Acknowledge and proceed** (Regional Compliance Lead will be notified)';
+    }
+    if (rule === 'ER-009' || trigger.includes('mandates supplier')) {
+      return 'Options:\n• **Remove the exclusive supplier rule** so alternatives can be considered\n• **Change the mandated supplier** to a different provider\n• **Request a manual exception** if you still need to force this supplier';
+    }
+    if (rule === 'ER-010' || trigger.includes('explicit user approval is required before shipping with another provider')) {
+      const alts = (currentSupplierShortlist || []).map(s => s.supplier_name).filter(Boolean).slice(0, 3);
+      const altText = alts.length > 0 ? ` (${alts.join(', ')})` : '';
+      return `Options:\n• **Approve shipping with a ranked alternative provider**${altText}\n• **Keep the original supplier mandate** and stop this request`;
     }
     if (rule === 'ER-006' || trigger.includes('capacity risk')) {
       return 'This is non-blocking. You can **acknowledge and proceed** or split the order.';

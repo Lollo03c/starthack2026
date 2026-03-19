@@ -46,6 +46,7 @@ Field types for field_updates:
 - delivery_countries: array of strings (e.g. ["Switzerland"])
 - currency: string (e.g. "EUR", "CHF")
 - preferred_supplier_mentioned: string (supplier name) or null
+- supplier_must_use: boolean (true only when the user requires that supplier and forbids alternatives)
 - incumbent_supplier: string (supplier name) or null
 - unit_of_measure: string
 - esg_requirement: boolean (true/false)
@@ -60,6 +61,8 @@ ESCALATION RESOLUTION RULES (applies when issues have type "escalation"):
 - ER-005 (data_residency_constraint_conflict): If user removes the constraint, set data_residency_constraint = false. If user wants to proceed anyway, set escalation_overrides.data_residency = true.
 - ER-006 (single_supplier_capacity_risk): If user acknowledges and wants to proceed, set escalation_overrides.single_supplier_risk = true.
 - ER-008 (usd_compliance): If user changes currency, update currency field. If user acknowledges and wants to proceed, set escalation_overrides.usd_compliance = true.
+- ER-009 (mandatory_supplier_conflict): If user removes the exclusive supplier instruction, set supplier_must_use = false. If user wants a different supplier, update preferred_supplier_mentioned. Use escalation_overrides.mandatory_supplier_conflict = true only when the user explicitly accepts a manual exception workflow.
+- ER-010 (alternative_supplier_approval_required): If user explicitly approves shipping with an alternative ranked provider, set supplier_must_use = false and update preferred_supplier_mentioned to that approved supplier name. Do not mark this resolved unless the user clearly approves a different provider or cancels the original must-use instruction.
 
 SUPPLIER CONTEXT RULE: When the user asks about suppliers, alternatives, or pricing, you MUST use the supplier shortlist data provided below to give specific, data-driven answers. Always mention supplier names, scores (quality, risk, ESG), unit prices, and lead times when relevant. Never ask the user to provide a supplier name without first listing the available options with their pros and cons.
 
@@ -80,7 +83,7 @@ def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], 
         k: request_json.get(k)
         for k in ["quantity", "budget_amount", "category_l1", "category_l2",
                    "delivery_countries", "currency", "required_by_date",
-                   "preferred_supplier_mentioned", "incumbent_supplier",
+                   "preferred_supplier_mentioned", "supplier_must_use", "incumbent_supplier",
                    "unit_of_measure", "esg_requirement", "data_residency_constraint",
                    "escalation_overrides"]
     }
@@ -138,7 +141,7 @@ def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], 
     allowed = {
         "quantity", "budget_amount", "required_by_date", "category_l1",
         "category_l2", "delivery_countries", "currency",
-        "preferred_supplier_mentioned", "incumbent_supplier",
+        "preferred_supplier_mentioned", "supplier_must_use", "incumbent_supplier",
         "unit_of_measure", "esg_requirement", "data_residency_constraint",
         "escalation_overrides",
     }
@@ -195,6 +198,8 @@ def _check_escalation_issues(escalation_issues: list[dict], updated_request: dic
         "ER-006": "single_supplier_risk",
         "ER-005": "data_residency",
         "ER-008": "usd_compliance",
+        "ER-009": "mandatory_supplier_conflict",
+        "ER-010": "alternative_supplier_approved",
     }
     pending = []
     for issue in escalation_issues:
@@ -202,6 +207,10 @@ def _check_escalation_issues(escalation_issues: list[dict], updated_request: dic
         override_key = rule_to_override.get(rule)
         if override_key and overrides.get(override_key):
             continue  # Overridden — resolved
+        if rule == "ER-009" and not updated_request.get("supplier_must_use", False):
+            continue
+        if rule == "ER-010" and not updated_request.get("supplier_must_use", False):
+            continue
         # ER-004 budget: check if budget_amount was updated enough
         if "budget" in issue.get("description", "").lower() or "budget" in issue.get("action_required", "").lower():
             continue  # Budget changes re-evaluated by engine; treat as resolved from chat's perspective

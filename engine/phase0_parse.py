@@ -9,6 +9,7 @@ Converts a raw request dict into a RequestContext with:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 
 from engine import config
@@ -60,6 +61,7 @@ def parse_request(request_dict: dict, data: DataContext) -> RequestContext:
         unit_of_measure=str(d.get("unit_of_measure", "unit")),
         required_by_date=required_by_date,
         preferred_supplier_mentioned=_str_or_none(d.get("preferred_supplier_mentioned")),
+        supplier_must_use=_bool_or_false(d.get("supplier_must_use")),
         incumbent_supplier=_str_or_none(d.get("incumbent_supplier")),
         delivery_countries=delivery_countries,
         data_residency_constraint=bool(d.get("data_residency_constraint", False)),
@@ -74,6 +76,16 @@ def parse_request(request_dict: dict, data: DataContext) -> RequestContext:
     ctx.incumbent_supplier_id_resolved, _ = _resolve_supplier_name(
         ctx.incumbent_supplier, data
     )
+
+    if (
+        ctx.preferred_supplier_mentioned
+        and not ctx.supplier_must_use
+        and "supplier_must_use" not in d
+    ):
+        ctx.supplier_must_use = _infer_must_use_supplier(
+            ctx.request_text,
+            ctx.preferred_supplier_mentioned,
+        )
 
     # --- LLM decomposition (optional) -----------------------------------------
     if config.LLM_ENABLED and ctx.request_text:
@@ -182,3 +194,37 @@ def _str_or_none(value) -> str | None:
         return None
     s = str(value).strip()
     return s if s else None
+
+
+def _bool_or_false(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    return False
+
+
+def _infer_must_use_supplier(request_text: str, supplier_name: str | None = None) -> bool:
+    if not request_text:
+        return False
+    text = request_text.lower()
+    hard_patterns = [
+        r"\bonly\b",
+        r"\bexclusive(?:ly)?\b",
+        r"\bmust use\b",
+        r"\bno other provider",
+        r"\bno other providers",
+        r"\bno alternative",
+        r"\bsole source\b",
+        r"\bmandatory supplier\b",
+        r"\bdo not use any other supplier\b",
+        r"\bfrom [a-z0-9 .&'-]+ only\b",
+        r"\bmust\b.{0,80}\bfrom\b",
+    ]
+    if any(re.search(pattern, text) for pattern in hard_patterns):
+        return True
+    if supplier_name:
+        supplier_lower = supplier_name.lower().strip()
+        if supplier_lower and f"from {supplier_lower}" in text and "must" in text:
+            return True
+    return False

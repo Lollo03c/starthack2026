@@ -82,6 +82,7 @@ def build_schema(enums: dict[str, list[str]]) -> dict[str, Any]:
             "unit_of_measure": nullable({"type": "string"}),
             "required_by_date": nullable({"type": "string"}),
             "preferred_supplier_mentioned": nullable({"type": "string"}),
+            "supplier_must_use": {"type": "boolean"},
             "incumbent_supplier": nullable({"type": "string"}),
             "contract_type_requested": {
                 "type": "string",
@@ -120,6 +121,7 @@ def build_schema(enums: dict[str, list[str]]) -> dict[str, Any]:
             "unit_of_measure",
             "required_by_date",
             "preferred_supplier_mentioned",
+            "supplier_must_use",
             "incumbent_supplier",
             "contract_type_requested",
             "delivery_countries",
@@ -167,6 +169,7 @@ Rules:
 - Keep metadata values exactly as provided when they are already present.
 - Do not invent requester IDs or site names. If not provided in metadata, use null for nullable fields.
 - If quantity, budget, required date, supplier preference, or incumbent are missing, use null.
+- Set supplier_must_use to true only when the user clearly makes the named supplier mandatory or exclusive, such as "only Apple", "must use Apple", "no other providers are allowed". Otherwise set it to false.
 - Infer request_language from the text if missing in metadata.
 - Infer category_l1 and category_l2 by choosing the best matching pair from the allowed list below. If no pair fits (the item clearly falls outside IT, Facilities, Professional Services, or Marketing), set category_l1 to "Other" and category_l2 to "Uncategorized". This will trigger a mandatory manual classification escalation — do not force a poor fit.
 - Infer unit_of_measure from the request text and category reference.
@@ -191,6 +194,7 @@ Rules:
 - If the text is missing key information such as quantity, budget, or specification, include "missing_info".
 - If the text contains conflicting or internally inconsistent details, include "contradictory".
 - If the text names a supplier explicitly, set preferred_supplier_mentioned to that supplier name (a string, NOT a boolean). Never set preferred_supplier_mentioned to true/false.
+- If the text names a supplier but does not make it mandatory, keep supplier_must_use=false.
 - Default status to "new" unless metadata explicitly provides another value.
 - delivery_countries should default to [country] when not otherwise specified and country is known.
 - data_residency_constraint and esg_requirement default to false unless the text or metadata clearly indicates true.
@@ -257,6 +261,7 @@ def build_default_metadata(raw_metadata: dict[str, Any]) -> dict[str, Any]:
     metadata.setdefault("requester_role", None)
     metadata.setdefault("submitted_for_id", None)
     metadata.setdefault("incumbent_supplier", None)
+    metadata.setdefault("supplier_must_use", False)
     metadata.setdefault("contract_type_requested", "purchase")
     metadata.setdefault("delivery_countries", None)
     metadata.setdefault("data_residency_constraint", None)
@@ -367,6 +372,10 @@ def _normalize_fields(data: dict[str, Any]) -> dict[str, Any]:
     psm = data.get("preferred_supplier_mentioned")
     if isinstance(psm, bool):
         data["preferred_supplier_mentioned"] = None
+    if not isinstance(data.get("supplier_must_use"), bool):
+        data["supplier_must_use"] = False
+    if not data.get("preferred_supplier_mentioned"):
+        data["supplier_must_use"] = False
     # Enforce Other / Uncategorized consistency
     if data.get("category_l1") == "Other":
         data["category_l2"] = "Uncategorized"

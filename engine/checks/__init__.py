@@ -15,6 +15,7 @@ from typing import Callable
 from engine.types import CheckResult, DataContext, RequestContext, SupplierRow
 
 from .category_match       import check_category_match
+from .must_use_supplier    import check_must_use_supplier
 from .region_match         import check_region_match
 from .quantity_feasible    import check_quantity_feasible
 from .not_restricted       import check_not_restricted
@@ -26,6 +27,7 @@ from .request_text_checks  import check_request_text
 CheckFn = Callable[[SupplierRow, RequestContext, DataContext], CheckResult]
 
 CHECK_PIPELINE: list[tuple[str, CheckFn]] = [
+    ("must_use_supplier",   check_must_use_supplier),
     ("category_match",       check_category_match),
     ("region_match",         check_region_match),
     ("quantity_feasible",    check_quantity_feasible),
