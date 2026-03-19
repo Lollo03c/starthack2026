@@ -212,7 +212,7 @@ def run_results_chat(
         result_messages = [result_messages]
 
     field_updates = raw.get("field_updates", {})
-    field_updates, heuristic_messages = _apply_resolution_heuristics(field_updates, messages, output_json, request_json)
+    field_updates, heuristic_messages, ship_supplier_selection = _apply_resolution_heuristics(field_updates, messages, output_json, request_json)
     if heuristic_messages:
         result_messages.extend(heuristic_messages)
 
@@ -243,6 +243,7 @@ def run_results_chat(
         "messages": result_messages,
         "updated_request_json": updated_request,
         "has_field_updates": has_updates,
+        "ship_supplier_selection": ship_supplier_selection,
     }
 
 
@@ -251,20 +252,22 @@ def _apply_resolution_heuristics(
     messages: list[dict],
     output_json: dict,
     request_json: dict,
-) -> tuple[dict, list[str]]:
+) -> tuple[dict, list[str], dict | None]:
     merged = dict(field_updates or {})
     heuristic_messages: list[str] = []
+    ship_supplier_selection: dict | None = None
     latest_user_text = ""
     for message in reversed(messages):
         if message.get("role") == "user":
             latest_user_text = str(message.get("content") or "")
             break
     if not latest_user_text:
-        return merged, heuristic_messages
+        return merged, heuristic_messages, ship_supplier_selection
 
     text = latest_user_text.lower()
     escalations = output_json.get("escalations", []) or []
     shortlist = output_json.get("supplier_shortlist", []) or []
+    excluded = output_json.get("suppliers_excluded", []) or []
     top_alternative = shortlist[0].get("supplier_name") if shortlist else None
     current_preferred = request_json.get("preferred_supplier_mentioned")
     mandatory_active = bool(request_json.get("supplier_must_use"))
@@ -325,13 +328,23 @@ def _apply_resolution_heuristics(
                 merged["preferred_supplier_mentioned"] = top_alternative
 
     switched_supplier = _extract_shortlist_supplier_switch(latest_user_text, shortlist)
+    if not switched_supplier:
+        switched_supplier = _extract_metric_based_supplier_switch(latest_user_text, shortlist)
     if switched_supplier and switched_supplier != current_preferred:
         merged["preferred_supplier_mentioned"] = switched_supplier
         if mandatory_active:
             merged["supplier_must_use"] = False
+        ship_supplier_selection = {"status": "valid", "supplier_name": switched_supplier}
         heuristic_messages.append(
             f"I've switched the selected supplier to **{switched_supplier}** and I'm refreshing the sourcing result now."
         )
+    elif _has_supplier_switch_intent(latest_user_text):
+        invalid_supplier = _extract_nonfeasible_supplier_switch(latest_user_text, shortlist, excluded)
+        if invalid_supplier:
+            ship_supplier_selection = {"status": "invalid", "supplier_name": invalid_supplier}
+            heuristic_messages.append(
+                f"**{invalid_supplier}** is not a feasible shipping choice for this request, so I haven't changed the supplier. Please choose a provider from the current feasible ranking."
+            )
 
     if overrides:
         merged["escalation_overrides"] = overrides
@@ -346,7 +359,7 @@ def _apply_resolution_heuristics(
     ):
         merged["preferred_supplier_mentioned"] = top_alternative
 
-    return merged, heuristic_messages
+    return merged, heuristic_messages, ship_supplier_selection
 
 
 def _extract_shortlist_supplier_switch(user_text: str, shortlist: list[dict]) -> str | None:
@@ -354,17 +367,7 @@ def _extract_shortlist_supplier_switch(user_text: str, shortlist: list[dict]) ->
     if not text or not shortlist:
         return None
 
-    intent_patterns = [
-        r"\bswitch to\b",
-        r"\bgo with\b",
-        r"\buse\b",
-        r"\bchoose\b",
-        r"\bselect\b",
-        r"\bbuy from\b",
-        r"\bship with\b",
-        r"\bproceed with\b",
-    ]
-    if not any(re.search(pattern, text) for pattern in intent_patterns):
+    if not _has_supplier_switch_intent(user_text):
         return None
 
     supplier_names = [
@@ -377,3 +380,132 @@ def _extract_shortlist_supplier_switch(user_text: str, shortlist: list[dict]) ->
         if supplier_name.lower() in text:
             return supplier_name
     return None
+
+
+def _has_supplier_switch_intent(user_text: str) -> bool:
+    text = (user_text or "").lower()
+    intent_patterns = [
+        r"\bswitch to\b",
+        r"\bswitch with\b",
+        r"\bswitch from\b",
+        r"\bchange to\b",
+        r"\bmove to\b",
+        r"\bgo with\b",
+        r"\buse\b",
+        r"\bchoose\b",
+        r"\bselect\b",
+        r"\bbuy from\b",
+        r"\bship with\b",
+        r"\bproceed with\b",
+    ]
+    return any(re.search(pattern, text) for pattern in intent_patterns)
+
+
+def _extract_nonfeasible_supplier_switch(
+    user_text: str,
+    shortlist: list[dict],
+    excluded: list[dict],
+) -> str | None:
+    text = (user_text or "").lower()
+    if not text:
+        return None
+
+    feasible_names = {
+        supplier.get("supplier_name", "").lower()
+        for supplier in shortlist
+        if supplier.get("supplier_name")
+    }
+    candidate_names = [
+        supplier.get("supplier_name", "")
+        for supplier in excluded
+        if supplier.get("supplier_name")
+    ]
+    candidate_names.sort(key=len, reverse=True)
+    for supplier_name in candidate_names:
+        lowered = supplier_name.lower()
+        if lowered in text and lowered not in feasible_names:
+            return supplier_name
+    return None
+
+
+def _extract_metric_based_supplier_switch(user_text: str, shortlist: list[dict]) -> str | None:
+    text = (user_text or "").lower()
+    if not text or not shortlist or not _has_supplier_switch_intent(user_text):
+        return None
+
+    metric = _extract_requested_metric(text)
+    if not metric:
+        return None
+
+    ranked = _rank_shortlist_by_metric(shortlist, metric)
+    top = ranked[0] if ranked else None
+    return top.get("supplier_name") if top else None
+
+
+def _extract_requested_metric(text: str) -> str | None:
+    metric_patterns = [
+        ("cheaper", [
+            r"\bcheapest\b",
+            r"\blower cost\b",
+            r"\blowest cost\b",
+            r"\blowest price\b",
+            r"\bcheaper\b",
+            r"\bcheap(?:er)? metric\b",
+            r"\bprice metric\b",
+            r"\bcost metric\b",
+        ]),
+        ("fastest", [
+            r"\bfastest\b",
+            r"\bquickest\b",
+            r"\bearliest\b",
+            r"\bsoonest\b",
+            r"\bfast(?:est)? metric\b",
+            r"\blead(?: time)? metric\b",
+            r"\bspeed metric\b",
+        ]),
+        ("lowest_risk", [
+            r"\blowest risk\b",
+            r"\bleast risky\b",
+            r"\bless risky\b",
+            r"\bminimum risk\b",
+            r"\brisk metric\b",
+            r"\blow risk metric\b",
+            r"\blowest risk metric\b",
+        ]),
+        ("overall", [
+            r"\boverall\b",
+            r"\bbest overall\b",
+            r"\btop overall\b",
+            r"\bbest ranked\b",
+            r"\boverall metric\b",
+            r"\bcomposite metric\b",
+        ]),
+    ]
+    for metric, patterns in metric_patterns:
+        if any(re.search(pattern, text) for pattern in patterns):
+            return metric
+    return None
+
+
+def _rank_shortlist_by_metric(shortlist: list[dict], metric: str) -> list[dict]:
+    def sort_value(supplier: dict) -> tuple:
+        if metric == "cheaper":
+            primary = float(supplier.get("total_price_eur", float("inf")))
+        elif metric == "fastest":
+            primary = float(
+                supplier.get(
+                    "effective_lead_time_days",
+                    supplier.get("standard_lead_time_days", float("inf")),
+                )
+            )
+        elif metric == "lowest_risk":
+            primary = float(supplier.get("risk_score", float("inf")))
+        else:
+            primary = -float(supplier.get("composite_score", 0.0))
+
+        composite_tiebreak = -float(supplier.get("composite_score", 0.0))
+        price_tiebreak = float(supplier.get("total_price_eur", float("inf")))
+        name_tiebreak = str(supplier.get("supplier_name", ""))
+        return (primary, composite_tiebreak, price_tiebreak, name_tiebreak)
+
+    return sorted(shortlist, key=sort_value)
