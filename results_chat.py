@@ -63,7 +63,7 @@ Answer from the output data — never invent information:
 - "Why was [supplier] excluded?" / "excluded suppliers" → Find in suppliers_excluded, explain filter stage and reason
 - "Tell me about the policies/rules" → Reference policy_evaluation: approval threshold, quotes required, category/geography rules with rule IDs
 - "What about pricing/costs?" → Unit prices, totals, volume tiers, budget gap/surplus, expedited pricing
-- "What assumptions were made?" / "uncertainties" → List each uncertainty with its impact
+- "What assumptions were made?" / "uncertainties" / "what did you infer?" → Give a short, plain-language bulleted list. Combine parser inferences and engine uncertainties into one flat list — do NOT split into "parser-level" vs "engine-level" sections. Rules: (1) Skip trivial inferences that are obvious from the request text (e.g. category matched from product name, language detected as English). (2) Only list assumptions that actually affect the result — missing budget, missing deadline, inferred country, no ESG filter, etc. (3) Use plain language — never expose internal field names like `preferred_supplier_mentioned`, `esg_requirement`, `data_residency_constraint`. Say "no preferred supplier specified" not "preferred_supplier_mentioned = null". (4) For each meaningful assumption, state: what was assumed, and the practical impact in one phrase. (5) No intro sentence, no closing boilerplate — just the bullets.
 - "Audit trail" / "what data was used?" → Policies checked, suppliers evaluated, data sources
 - General questions → Answer from the data with specific numbers
 
@@ -98,6 +98,8 @@ def run_results_chat(
     messages: list[dict],
     output_json: dict,
     request_json: dict,
+    field_provenance: dict | None = None,
+    inference_notes: dict | None = None,
 ) -> dict:
     """Run a results presentation / Q&A chat turn."""
 
@@ -128,6 +130,12 @@ def run_results_chat(
     uncertainties = output_json.get("uncertainties", [])
     if uncertainties:
         context_parts.append(f"\nUncertainties:\n{json.dumps(uncertainties, indent=2, ensure_ascii=False)}")
+
+    if field_provenance:
+        inferred = {k: v for k, v in field_provenance.items() if v == "llm_inferred"}
+        if inferred or inference_notes:
+            prov_block = {"llm_inferred_fields": inferred, "inference_notes": inference_notes or {}}
+            context_parts.append(f"\nParser-level inferences (fields the LLM deduced rather than the user stating explicitly):\n{json.dumps(prov_block, indent=2, ensure_ascii=False)}")
 
     audit = output_json.get("audit_trail", {})
     context_parts.append(f"\nAudit trail:\n{json.dumps(audit, indent=2, ensure_ascii=False)}")

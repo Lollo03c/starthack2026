@@ -139,6 +139,8 @@ class ResultsChatRequest(BaseModel):
     messages: list
     output_json: dict
     request_json: dict
+    field_provenance: dict | None = None
+    inference_notes: dict | None = None
 
 
 @app.post("/results-chat")
@@ -147,7 +149,7 @@ def results_chat_endpoint(body: ResultsChatRequest):
     from results_chat import run_results_chat  # noqa: PLC0415
 
     try:
-        return run_results_chat(body.messages, body.output_json, body.request_json)
+        return run_results_chat(body.messages, body.output_json, body.request_json, field_provenance=body.field_provenance, inference_notes=body.inference_notes)
     except Exception as e:
         logging.getLogger(__name__).error("results-chat error: %s", e, exc_info=True)
         if "rate_limit_exceeded" in str(e) or "429" in str(e):

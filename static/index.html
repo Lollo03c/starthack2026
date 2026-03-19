@@ -671,6 +671,10 @@
     const text = input.value.trim();
     if (!text) return;
 
+    // Remove suggestion chips on any send
+    const chips = document.getElementById('suggestion-chips');
+    if (chips) chips.remove();
+
     input.value = '';
     input.style.height = 'auto';
 
@@ -702,6 +706,8 @@
           messages: conversationMessages,
           output_json: loadedOutput,
           request_json: currentRequestJson,
+          field_provenance: currentFieldProvenance || null,
+          inference_notes: (devData.provenance || {}).inference_notes || null,
         });
 
         let res = await fetch('/results-chat', {
@@ -744,6 +750,7 @@
         // Check if we can forward (no blocking escalations, no field updates needed)
         if (!data.has_field_updates) {
           checkAndShowForwardButton(devData.output);
+          renderSuggestionChips(loadedOutput);
         }
 
         // Handle field updates (escalation resolution in results chat)
@@ -780,6 +787,7 @@
                   checkAndShowForwardButton(output_json);
                 }
               }
+              renderSuggestionChips(output_json);
             }
           } catch (_) { /* silent */ }
           finally {
@@ -932,6 +940,8 @@
           messages: [],
           output_json: output_json,
           request_json: currentRequestJson,
+          field_provenance: currentFieldProvenance || null,
+          inference_notes: (devData.provenance || {}).inference_notes || null,
         }),
       });
 
@@ -954,6 +964,9 @@
         conversationMessages.push({ role: 'assistant', content: data.messages[i] });
       }
 
+      renderSuggestionChips(output_json);
+      checkAndShowForwardButton(output_json);
+
       // 5. Enter results chat mode
       isResultsChat = true;
       isRefinementAfterOutput = false;
@@ -965,6 +978,42 @@
       hideTypingIndicator();
       appendMessage('assistant', 'Sorry, something went wrong processing your request. Please try again.');
     }
+  }
+
+  // ── Suggestion chips ──────────────────────────────────────────────────────
+  function renderSuggestionChips(out) {
+    // Remove any existing chips first
+    const existing = document.getElementById('suggestion-chips');
+    if (existing) existing.remove();
+
+    const chips = [
+      'What assumptions were made?',
+      'Show me the alternatives',
+      'Which policies apply?',
+    ];
+    if (out.suppliers_excluded && out.suppliers_excluded.length > 0) {
+      const name = out.suppliers_excluded[0].supplier_name || out.suppliers_excluded[0].supplier_id;
+      chips.push(`Why was ${name} excluded?`);
+    }
+
+    const container = document.createElement('div');
+    container.id = 'suggestion-chips';
+    container.className = 'flex flex-wrap gap-2 px-4 py-2';
+    chips.forEach(text => {
+      const btn = document.createElement('button');
+      btn.className = 'chip px-3 py-1 text-sm rounded-full border border-blue-400 text-blue-300 hover:bg-blue-900/40 transition';
+      btn.textContent = text;
+      btn.addEventListener('click', () => {
+        const chips = document.getElementById('suggestion-chips');
+        if (chips) chips.remove();
+        const input = getActiveInput();
+        input.value = text;
+        handleConvoSend();
+      });
+      container.appendChild(btn);
+    });
+
+    getActiveMessageContainer().appendChild(container);
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────
@@ -1800,6 +1849,8 @@
           messages: [],
           output_json: data.output_json,
           request_json: data.request_json,
+          field_provenance: null,
+          inference_notes: null,
         }),
       });
 
@@ -1816,6 +1867,8 @@
           appendMessage('assistant', chatData.messages[i]);
           conversationMessages.push({ role: 'assistant', content: chatData.messages[i] });
         }
+        renderSuggestionChips(data.output_json);
+        checkAndShowForwardButton(data.output_json);
       } else {
         appendMessage('assistant', 'Example loaded but explanation could not be generated.');
       }

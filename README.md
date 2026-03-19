@@ -48,8 +48,8 @@ Open `http://localhost:8000`.
 1. Enter a free-text purchase request → parsed + validated
 2. If required fields are missing, a chat collects them
 3. Results appear in split-screen: structured supplier comparison (left) + chat (right)
-4. Ask follow-up questions or resolve escalations via chat
-5. Policy is rechecked after every update; "Forward request to supplier" button appears when clear to proceed
+4. Ask follow-up questions or resolve escalations via chat — suggestion chips appear after every response for quick navigation
+5. Policy is rechecked after every update; "Forward request to supplier" button appears immediately when clear to proceed
 
 ## Key files
 
