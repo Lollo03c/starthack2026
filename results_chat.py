@@ -77,7 +77,12 @@ When the user wants to resolve an escalation, set field_updates:
 - ER-006 (capacity_risk): override → {"escalation_overrides": {"single_supplier_risk": true}}
 - ER-008 (usd_compliance): change currency → {"currency": "<new>"}; override → {"escalation_overrides": {"usd_compliance": true}}
 
-After resolving an escalation, acknowledge it. If other escalations remain, present them. If all resolved, tell the user the request can now proceed.
+After resolving an escalation, your response MUST contain EXACTLY these messages:
+1. Acknowledge the resolved escalation (1 sentence).
+2. IF any other blocking escalations still exist in the output data: list each remaining blocking escalation with its rule ID, what triggered it, who needs to act, and what the user must do to resolve it here in the chat. This second message is MANDATORY if any blocking escalations remain — never skip it, never wait for the user to ask.
+3. IF all blocking escalations are now resolved: tell the user the request can proceed and suggest next steps.
+
+NEVER respond with just "Understood" or a vague acknowledgement when blocking escalations remain unresolved.
 
 When resolving escalations, you MUST also use the supplier shortlist data to give specific, data-driven answers. For example, if the user asks about alternatives for a restricted supplier, list the available suppliers with their scores, prices, and lead times.
 

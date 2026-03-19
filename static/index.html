@@ -1842,6 +1842,8 @@
   });
 
   $('convo-submit-btn').addEventListener('click', () => {
+    appendMessage('user', 'submit');
+    conversationMessages.push({ role: 'user', content: 'submit' });
     if (isRefinementAfterOutput) {
       resubmitAfterRefinement();
     } else {
