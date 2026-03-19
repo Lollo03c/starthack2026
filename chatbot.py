@@ -63,6 +63,7 @@ ESCALATION RESOLUTION RULES (applies when issues have type "escalation"):
 - ER-008 (usd_compliance): If user changes currency, update currency field. If user acknowledges and wants to proceed, set escalation_overrides.usd_compliance = true.
 - ER-009 (mandatory_supplier_conflict): If user removes the exclusive supplier instruction, set supplier_must_use = false. If user wants a different supplier, update preferred_supplier_mentioned. Use escalation_overrides.mandatory_supplier_conflict = true only when the user explicitly accepts a manual exception workflow.
 - ER-010 (alternative_supplier_approval_required): If user explicitly approves shipping with an alternative ranked provider, set supplier_must_use = false and update preferred_supplier_mentioned to that approved supplier name. Do not mark this resolved unless the user clearly approves a different provider or cancels the original must-use instruction.
+- ER-011 (better_alternative_available): If user explicitly approves switching to the better-ranked provider, set supplier_must_use = false and update preferred_supplier_mentioned to that provider. Otherwise keep the mandatory supplier as default.
 
 SUPPLIER CONTEXT RULE: When the user asks about suppliers, alternatives, or pricing, you MUST use the supplier shortlist data provided below to give specific, data-driven answers. Always mention supplier names, scores (quality, risk, ESG), unit prices, and lead times when relevant. Never ask the user to provide a supplier name without first listing the available options with their pros and cons.
 
@@ -200,6 +201,7 @@ def _check_escalation_issues(escalation_issues: list[dict], updated_request: dic
         "ER-008": "usd_compliance",
         "ER-009": "mandatory_supplier_conflict",
         "ER-010": "alternative_supplier_approved",
+        "ER-011": "better_alternative_acknowledged",
     }
     pending = []
     for issue in escalation_issues:
@@ -210,6 +212,8 @@ def _check_escalation_issues(escalation_issues: list[dict], updated_request: dic
         if rule == "ER-009" and not updated_request.get("supplier_must_use", False):
             continue
         if rule == "ER-010" and not updated_request.get("supplier_must_use", False):
+            continue
+        if rule == "ER-011" and not updated_request.get("supplier_must_use", False):
             continue
         # ER-004 budget: check if budget_amount was updated enough
         if "budget" in issue.get("description", "").lower() or "budget" in issue.get("action_required", "").lower():

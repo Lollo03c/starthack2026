@@ -1695,6 +1695,11 @@
       const altText = alts.length > 0 ? ` (${alts.join(', ')})` : '';
       return `Options:\n• **Approve shipping with a ranked alternative provider**${altText}\n• **Keep the original supplier mandate** and stop this request`;
     }
+    if (rule === 'ER-011' || trigger.includes('has a higher ranking score')) {
+      const alts = (currentSupplierShortlist || []).map(s => s.supplier_name).filter(Boolean).slice(0, 3);
+      const altText = alts.length > 0 ? ` (${alts.join(', ')})` : '';
+      return `Options:\n• **Approve switching to the better-ranked provider**${altText}\n• **Keep the mandatory supplier as the default choice**`;
+    }
     if (rule === 'ER-006' || trigger.includes('capacity risk')) {
       return 'This is non-blocking. You can **acknowledge and proceed** or split the order.';
     }

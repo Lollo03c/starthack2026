@@ -47,6 +47,7 @@ def score_and_rank(
     _add_llm_fit_scores(candidates, ctx)
     _compute_composite_scores(candidates, ctx, data)
     candidates.sort(key=lambda c: c.composite_score, reverse=True)
+    _promote_mandated_supplier(candidates, ctx)
     return candidates
 
 
@@ -222,6 +223,26 @@ def _compute_composite_scores(
 
         c.composite_score = round(score, 6)
         c.score_breakdown = {k: round(v, 4) for k, v in breakdown.items()}
+
+
+def _promote_mandated_supplier(
+    candidates: list[ScoredSupplier],
+    ctx: RequestContext,
+) -> None:
+    """Keep the mandatory supplier as the default choice while preserving alternatives."""
+    if not ctx.supplier_must_use or not ctx.preferred_supplier_id_resolved or not candidates:
+        return
+
+    mandated_idx = next(
+        (idx for idx, candidate in enumerate(candidates)
+         if candidate.supplier_row.supplier_id == ctx.preferred_supplier_id_resolved),
+        None,
+    )
+    if mandated_idx is None or mandated_idx == 0:
+        return
+
+    mandated = candidates.pop(mandated_idx)
+    candidates.insert(0, mandated)
 
 
 # ---------------------------------------------------------------------------

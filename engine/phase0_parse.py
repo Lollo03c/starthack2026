@@ -80,7 +80,6 @@ def parse_request(request_dict: dict, data: DataContext) -> RequestContext:
     if (
         ctx.preferred_supplier_mentioned
         and not ctx.supplier_must_use
-        and "supplier_must_use" not in d
     ):
         ctx.supplier_must_use = _infer_must_use_supplier(
             ctx.request_text,
@@ -219,12 +218,18 @@ def _infer_must_use_supplier(request_text: str, supplier_name: str | None = None
         r"\bmandatory supplier\b",
         r"\bdo not use any other supplier\b",
         r"\bfrom [a-z0-9 .&'-]+ only\b",
-        r"\bmust\b.{0,80}\bfrom\b",
     ]
     if any(re.search(pattern, text) for pattern in hard_patterns):
         return True
     if supplier_name:
         supplier_lower = supplier_name.lower().strip()
-        if supplier_lower and f"from {supplier_lower}" in text and "must" in text:
+        supplier_pattern = re.escape(supplier_lower)
+        supplier_specific_patterns = [
+            rf"\bmust\b.{{0,80}}\bfrom\s+{supplier_pattern}\b",
+            rf"\bonly\s+{supplier_pattern}\b",
+            rf"\b{supplier_pattern}\s+only\b",
+            rf"\bmust use\s+{supplier_pattern}\b",
+        ]
+        if any(re.search(pattern, text) for pattern in supplier_specific_patterns):
             return True
     return False

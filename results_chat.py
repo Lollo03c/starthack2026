@@ -79,6 +79,7 @@ When the user wants to resolve an escalation, set field_updates:
 - ER-008 (usd_compliance): change currency → {"currency": "<new>"}; override → {"escalation_overrides": {"usd_compliance": true}}
 - ER-009 (mandatory_supplier_conflict): remove the exclusive supplier constraint → {"supplier_must_use": false}; switch supplier → {"preferred_supplier_mentioned": "<name>"}; manual exception workflow → {"escalation_overrides": {"mandatory_supplier_conflict": true}}
 - ER-010 (alternative_supplier_approval_required): explicitly approve another ranked provider → {"supplier_must_use": false, "preferred_supplier_mentioned": "<approved ranked supplier>"}
+- ER-011 (better_alternative_available): explicitly approve switching from the mandatory supplier to the better-ranked provider → {"supplier_must_use": false, "preferred_supplier_mentioned": "<approved ranked supplier>"}
 
 After resolving an escalation, your response MUST contain EXACTLY these messages:
 1. Acknowledge the resolved escalation (1 sentence).
@@ -211,7 +212,9 @@ def run_results_chat(
         result_messages = [result_messages]
 
     field_updates = raw.get("field_updates", {})
-    field_updates = _apply_resolution_heuristics(field_updates, messages, output_json, request_json)
+    field_updates, heuristic_messages = _apply_resolution_heuristics(field_updates, messages, output_json, request_json)
+    if heuristic_messages:
+        result_messages.extend(heuristic_messages)
 
     # Merge field updates into request_json
     allowed = {
@@ -248,21 +251,23 @@ def _apply_resolution_heuristics(
     messages: list[dict],
     output_json: dict,
     request_json: dict,
-) -> dict:
+) -> tuple[dict, list[str]]:
     merged = dict(field_updates or {})
+    heuristic_messages: list[str] = []
     latest_user_text = ""
     for message in reversed(messages):
         if message.get("role") == "user":
             latest_user_text = str(message.get("content") or "")
             break
     if not latest_user_text:
-        return merged
+        return merged, heuristic_messages
 
     text = latest_user_text.lower()
     escalations = output_json.get("escalations", []) or []
     shortlist = output_json.get("supplier_shortlist", []) or []
     top_alternative = shortlist[0].get("supplier_name") if shortlist else None
     current_preferred = request_json.get("preferred_supplier_mentioned")
+    mandatory_active = bool(request_json.get("supplier_must_use"))
 
     overrides = dict(merged.get("escalation_overrides") or {})
 
@@ -291,12 +296,21 @@ def _apply_resolution_heuristics(
         "approve another provider",
     ]
     if any(phrase in text for phrase in switch_phrases):
-        if any(e.get("rule") == "ER-010" for e in escalations):
+        if any(e.get("rule") in {"ER-010", "ER-011"} for e in escalations):
             merged["supplier_must_use"] = False
             if "preferred_supplier_mentioned" not in merged and top_alternative:
                 merged["preferred_supplier_mentioned"] = top_alternative
             if top_alternative and merged.get("preferred_supplier_mentioned") == current_preferred:
                 merged["preferred_supplier_mentioned"] = top_alternative
+
+    switched_supplier = _extract_shortlist_supplier_switch(latest_user_text, shortlist)
+    if switched_supplier and switched_supplier != current_preferred:
+        merged["preferred_supplier_mentioned"] = switched_supplier
+        if mandatory_active:
+            merged["supplier_must_use"] = False
+        heuristic_messages.append(
+            f"I've switched the selected supplier to **{switched_supplier}** and I'm refreshing the sourcing result now."
+        )
 
     if overrides:
         merged["escalation_overrides"] = overrides
@@ -307,8 +321,38 @@ def _apply_resolution_heuristics(
         merged.get("supplier_must_use") is False
         and top_alternative
         and merged.get("preferred_supplier_mentioned", current_preferred) == current_preferred
-        and any(e.get("rule") == "ER-010" for e in escalations)
+        and any(e.get("rule") in {"ER-010", "ER-011"} for e in escalations)
     ):
         merged["preferred_supplier_mentioned"] = top_alternative
 
-    return merged
+    return merged, heuristic_messages
+
+
+def _extract_shortlist_supplier_switch(user_text: str, shortlist: list[dict]) -> str | None:
+    text = (user_text or "").lower()
+    if not text or not shortlist:
+        return None
+
+    intent_patterns = [
+        r"\bswitch to\b",
+        r"\bgo with\b",
+        r"\buse\b",
+        r"\bchoose\b",
+        r"\bselect\b",
+        r"\bbuy from\b",
+        r"\bship with\b",
+        r"\bproceed with\b",
+    ]
+    if not any(re.search(pattern, text) for pattern in intent_patterns):
+        return None
+
+    supplier_names = [
+        supplier.get("supplier_name", "")
+        for supplier in shortlist
+        if supplier.get("supplier_name")
+    ]
+    supplier_names.sort(key=len, reverse=True)
+    for supplier_name in supplier_names:
+        if supplier_name.lower() in text:
+            return supplier_name
+    return None

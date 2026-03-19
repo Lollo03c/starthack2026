@@ -569,10 +569,50 @@ def _collect_escalations(
                 f"must be verified by Regional Compliance Lead."
             ),
             escalate_to="Regional Compliance Lead",
+                blocking=False,
+        ))
+
+    better_alt = _find_better_alternative_than_mandated(ctx, scored)
+    if better_alt is not None:
+        all_esc.append(Escalation(
+            rule_id="ER-011",
+            trigger=(
+                f"Mandatory supplier '{ctx.preferred_supplier_mentioned}' remains the default choice, "
+                f"but '{better_alt.supplier_row.supplier_name}' has a higher ranking score "
+                f"({better_alt.composite_score:.3f} vs {scored[0].composite_score:.3f}). "
+                "Explicit user approval is required to switch away from the mandatory supplier."
+            ),
+            escalate_to="Requester",
             blocking=False,
         ))
 
     return all_esc
+
+
+def _find_better_alternative_than_mandated(
+    ctx: RequestContext,
+    scored: list[ScoredSupplier],
+) -> ScoredSupplier | None:
+    if not ctx.supplier_must_use or not ctx.preferred_supplier_id_resolved or len(scored) < 2:
+        return None
+
+    mandated = next(
+        (supplier for supplier in scored
+         if supplier.supplier_row.supplier_id == ctx.preferred_supplier_id_resolved),
+        None,
+    )
+    if mandated is None:
+        return None
+
+    better_alternatives = [
+        supplier for supplier in scored
+        if supplier.supplier_row.supplier_id != ctx.preferred_supplier_id_resolved
+        and supplier.composite_score > mandated.composite_score
+    ]
+    if not better_alternatives:
+        return None
+    better_alternatives.sort(key=lambda supplier: supplier.composite_score, reverse=True)
+    return better_alternatives[0]
 
 
 def _deduplicate_escalations(escalations: list[Escalation]) -> list[Escalation]:
@@ -604,6 +644,7 @@ def _apply_escalation_overrides(escalations: list[Escalation], overrides: dict) 
         "usd_compliance": "ER-008",
         "mandatory_supplier_conflict": "ER-009",
         "alternative_supplier_approved": "ER-010",
+        "better_alternative_acknowledged": "ER-011",
     }
     rules_to_skip = {rule_id for key, rule_id in _override_map.items() if overrides.get(key)}
     if not rules_to_skip:
@@ -841,8 +882,15 @@ def _build_mandated_supplier_summary(
     for supplier in scored:
         if supplier.supplier_row.supplier_id == ctx.preferred_supplier_id_resolved:
             summary["status"] = "satisfied"
-            summary["headline"] = f"{preferred_name} is mandatory and remains the only compliant supplier under consideration."
-            summary["detail"] = "All alternative suppliers were excluded because the request explicitly disallowed other providers."
+            summary["headline"] = f"{preferred_name} is mandatory and remains the default supplier choice."
+            better_alt = _find_better_alternative_than_mandated(ctx, scored)
+            if better_alt is not None:
+                summary["detail"] = (
+                    f"Other compliant suppliers remain visible in the ranking. "
+                    f"'{better_alt.supplier_row.supplier_name}' scores better, but explicit approval is required to switch away from the mandatory supplier."
+                )
+            else:
+                summary["detail"] = "Other compliant suppliers remain visible in the ranking, but the mandatory supplier stays as the default choice."
             return summary
 
     preferred_rows = data.suppliers_by_id.get(ctx.preferred_supplier_id_resolved, [])
