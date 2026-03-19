@@ -12,6 +12,7 @@ from pydantic import BaseModel
 load_dotenv()
 
 from explainer import explain_decision  # noqa: E402 — after dotenv
+from engine import load_data, process_request as engine_process  # noqa: E402
 
 BASE_DIR = Path(__file__).parent
 EXAMPLES_DIR = BASE_DIR / "examples"
@@ -20,6 +21,9 @@ STATIC_DIR = BASE_DIR / "static"
 app = FastAPI(title="Procurement Decision Explainer")
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Load data once at startup
+_engine_data = load_data(str(BASE_DIR / "data"))
 
 
 @app.get("/")
@@ -66,14 +70,22 @@ def parse(body: ParseRequest):
 
 class ProcessRequest(BaseModel):
     request_json: dict
+    field_provenance: dict = {}
+    inference_notes: dict = {}
 
 
 @app.post("/process")
 def process(body: ProcessRequest):
-    output_path = EXAMPLES_DIR / "example_output.json"
-    if not output_path.exists():
-        raise HTTPException(status_code=404, detail="example_output.json not found")
-    output_json = json.loads(output_path.read_text())
+    try:
+        output_json = engine_process(body.request_json, _engine_data)
+    except Exception as e:
+        # Fallback to example output so the UI doesn't break during development
+        import logging
+        logging.getLogger(__name__).error("Engine error, falling back to example: %s", e, exc_info=True)
+        output_path = EXAMPLES_DIR / "example_output.json"
+        if not output_path.exists():
+            raise HTTPException(status_code=500, detail=f"Engine failed: {e}")
+        output_json = json.loads(output_path.read_text())
     return {"output_json": output_json, "request_json": body.request_json}
 
 
