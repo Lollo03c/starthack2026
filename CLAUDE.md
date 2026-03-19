@@ -155,8 +155,8 @@ The explanation should cover: system design overview, clear reasoning logic, how
 | File | Role |
 |------|------|
 | `app.py` | FastAPI server — all endpoints |
-| `explainer.py` | `explain_decision(output_json, request_text)` — LLM explanation |
-| `chatbot.py` | `run_chat_turn(messages, request_json, issues, original_request_text)` — clarification chat loop |
+| `explainer.py` | `explain_decision(output_json)` — LLM explanation (request_text param removed) |
+| `chatbot.py` | `run_chat_turn(messages, request_json, issues, original_request_text, field_provenance)` — clarification chat loop |
 | `validation.py` | `validate_request(data, original_text)` — structural + semantic validation |
 | `scripts/extract_request.py` | `parse_request_text(text, metadata)` — LLM parsing + `_normalize_fields()` alias remapping |
 | `static/index.html` | Full UI — ChatGPT-style chat interface, animated results, supplier table, validation, escalations, AI explanation |
@@ -174,12 +174,12 @@ The explanation should cover: system design overview, clear reasoning logic, how
 | `POST` | `/process` | `{ request_json }` → `{ output_json, request_json }` (stub: returns `example_output.json`) |
 | `POST` | `/explain` | `{ output_json, request_text? }` → `{ explanation }` via Groq LLM |
 | `POST` | `/validate` | `{ request_json, original_request_text? }` → `{ valid, issues }` |
-| `POST` | `/chat` | `{ messages, request_json, issues, original_request_text? }` → `{ reply, updated_request_json, remaining_issues, resolved }` |
+| `POST` | `/chat` | `{ messages, request_json, issues, original_request_text?, field_provenance? }` → `{ reply, updated_request_json, updated_field_provenance, remaining_issues, resolved }` |
 
 ### UI Flow
 1. Initial state: full-viewport centered chat bar (ChatGPT-style), headline + subtext, optional Business Unit / Country / Currency pill inputs
 2. Submit (Enter or arrow button) → chat bar fades+slides out → loading overlay with pulsing dots
-3. Pipeline: `POST /parse` → `POST /process` → `POST /explain` (all three called sequentially on every submit)
+3. Pipeline: `POST /parse` → `POST /validate` → (if invalid: enter chat mode to resolve issues) → `POST /process` → `POST /explain`
 4. Results phase fades in: AI explanation paragraphs animate in with 160ms stagger, then supplier table, validation, escalations, excluded suppliers, collapsible request details
 5. "← New Request" button in sticky top bar resets and restores the chat bar
 6. "Load example request" link (subtle, bottom of chat phase) loads demo data and also calls `/explain`
@@ -188,17 +188,23 @@ The explanation should cover: system design overview, clear reasoning logic, how
 ### Key Implementation Decisions & Constraints
 
 - **Groq `json_schema` not supported** — must use `response_format: { type: "json_object" }`. The prompt describes the schema instead of enforcing it structurally.
+- **`/no_think` prefix** — all system prompts use `/no_think` to suppress Qwen's chain-of-thought reasoning in JSON responses.
 - **Model**: `qwen/qwen3-32b` across all four LLM files. Previous models tried: `llama-3.3-70b-versatile` (hit daily TPD limit), `llama-3.1-8b-instant` (schema drift — confused provenance values with field values), `llama3-70b-8192` (decommissioned), `mixtral-8x7b-32768` (decommissioned). Check available models with the Groq `/openai/v1/models` endpoint if another switch is needed.
 - **`/process` is a stub** — always returns `example_output.json` regardless of parsed request. The real processing engine (policy evaluation, supplier matching, escalation logic) is the main thing left to build.
 - **`scripts/extract_request.py`** is also a standalone CLI: `python scripts/extract_request.py --request-text "..." --metadata-json '{}'`
+- **Parser LLM params** — `temperature=0.1`, `max_tokens=2000` to reduce randomness and prevent JSON truncation.
+- **Scenario tag definitions in prompt** — the parser prompt includes brief definitions for each tag (`standard`, `missing_info`, `contradictory`, `threshold`, `restricted`, `lead_time`, `capacity`, `multi_country`, `multilingual`) so the LLM can infer them from text.
 - **No database** — all data is read from CSV/JSON files at request time.
-- **`explainer.py`** lazy-initialises a single Groq client (module-level singleton).
-- **LLM field name drift** — the parser LLM sometimes outputs aliased field names (`budget` instead of `budget_amount`, `preferred_supplier` instead of `preferred_supplier_mentioned`, etc.). `_normalize_fields()` in `extract_request.py` remaps known aliases post-parse. Add new aliases there if new drift is observed.
-- **`preferred_supplier_mentioned`** must be a string (supplier name) or null — never a boolean. The LLM sometimes sets it to `true`; `_normalize_fields()` converts that to `null`.
+- **`explainer.py`** lazy-initialises a single Groq client (module-level singleton). `max_tokens=1800`. Catches `groq.RateLimitError` and `groq.InternalServerError`. Prompt is concise (5 sections: Outcome, Top Recommendation, Alternatives, Excluded Suppliers, Escalations). `request_text` param removed — only takes `output_json`.
+- **LLM field name drift** — the parser LLM sometimes outputs aliased field names (`budget` instead of `budget_amount`, `preferred_supplier` instead of `preferred_supplier_mentioned`, etc.). `_normalize_fields()` in `extract_request.py` remaps known aliases post-parse. Add new aliases there if new drift is observed. The parser prompt now puts the CRITICAL field names rule at the top of the rules list to reduce drift.
+- **`preferred_supplier_mentioned`** must be a string (supplier name) or null — never a boolean. The LLM sometimes sets it to `true`; `_normalize_fields()` converts that to `null`. The prompt now explicitly states this rule twice (top of rules + inline).
 - **Country normalisation** — `_normalize_fields()` maps full country names to ISO 3166-1 alpha-2 codes (e.g. `"Germany"` → `"DE"`) for both `country` and `delivery_countries`.
 - **Chat trigger** — chat mode is only entered when a structural required field is missing (`quantity`, `category_l1`, `category_l2`, `delivery_countries`). Semantic issues (contradictions, implausible prices, past deadlines) are detected and returned but do NOT block the flow. This is enforced in `validate_request()`: `valid` is based on `struct_issues` only, not `sem_issues`.
-- **Rate limit handling** — `/parse` catches `groq.RateLimitError` and returns HTTP 429 with a readable message instead of a 500.
+- **Chatbot context injection** — the chatbot system prompt includes current request state (key field values) so the LLM knows what's already captured and can ask smarter questions. It also lists all field types including `preferred_supplier_mentioned`, `incumbent_supplier`, `unit_of_measure`, `esg_requirement`, `data_residency_constraint`.
+- **Semantic validation types** — the LLM prompt allows `"type"` values: `"ambiguous"`, `"contradictory"`, `"invalid"`, `"implausible"` (expanded from just ambiguous/contradictory). Exceptions are logged via `logging.exception()` instead of silently swallowed.
+- **Rate limit handling** — `/parse` catches `groq.RateLimitError` and returns HTTP 429 with a readable message instead of a 500. `explainer.py` also catches rate limit and internal server errors.
 - **`/parse` response** — returns `{ request_json, field_provenance, inference_notes }`. In the frontend, `request_json` goes into `devData.parsed` and `{ field_provenance, inference_notes }` goes into `devData.provenance` (separate slot). Visible via the "Provenance / Notes" button in the dev panel. Not shown in the main UI.
+- **`field_provenance` forwarded through chat** — the frontend stores `field_provenance` from `/parse`, sends it in `/chat` requests, and updates it from `updated_field_provenance` in chat responses. The dev panel provenance view stays up-to-date during chat.
 
 ### What Still Needs to Be Built
 1. **Real processing engine** — replace the `/process` stub with actual logic:

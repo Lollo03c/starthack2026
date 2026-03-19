@@ -1,8 +1,11 @@
 import json
+import logging
 import os
 from datetime import date
 
 from groq import Groq
+
+logger = logging.getLogger(__name__)
 
 MODEL = "qwen/qwen3-32b"
 
@@ -64,7 +67,7 @@ Each issue:
 {{
   "issue_id": "VAL-SEM-001",
   "severity": "error" or "warning",
-  "type": "ambiguous" or "contradictory",
+  "type": one of "ambiguous", "contradictory", "invalid", "implausible",
   "field": "<field name>",
   "description": "<clear one-sentence description>",
   "question_for_user": "<one direct clarifying question>"
@@ -97,12 +100,13 @@ def validate_semantics(request_json: dict, original_text: str) -> list[dict]:
         data = json.loads(response.choices[0].message.content)
         return data.get("issues", [])
     except Exception:
+        logger.exception("Semantic validation failed")
         return []
 
 
 def validate_request(data: dict, original_text: str) -> tuple[bool, list[dict]]:
     struct_issues = validate_structure(data)
-    sem_issues = validate_semantics(data, original_text) if original_text else []
+    sem_issues = validate_semantics(data, original_text) if original_text and original_text.strip() else []
     all_issues = struct_issues + sem_issues
     valid = not any(i.get("severity") == "error" for i in struct_issues)
     return valid, all_issues

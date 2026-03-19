@@ -162,6 +162,8 @@ IMPORTANT: Your response must be a single JSON object containing ALL of the foll
 
 Rules:
 - Return one JSON object only.
+- CRITICAL field names — use these exact keys, no synonyms: budget_amount (not "budget"), incumbent_supplier (not "incumbent"), preferred_supplier_mentioned (not "preferred_supplier"), business_unit (not "businessUnit"), required_by_date (not "required_date" or "deadline").
+- preferred_supplier_mentioned must be a string (the supplier name) or null. NEVER set it to true or false.
 - Keep metadata values exactly as provided when they are already present.
 - Do not invent requester IDs or site names. If not provided in metadata, use null for nullable fields.
 - If quantity, budget, required date, supplier preference, or incumbent are missing, use null.
@@ -176,11 +178,20 @@ Rules:
 - Use only these currencies: {", ".join(enums["currency"])}
 - Use only these contract_type_requested values: {", ".join(enums["contract_type_requested"])}
 - Use only these scenario tags when relevant: {", ".join(enums["scenario_tags"])}
+- Scenario tag definitions (apply all that match):
+  - "standard": straightforward request, no issues detected
+  - "missing_info": key fields like quantity, budget, or specification are absent from the text
+  - "contradictory": text contains internally conflicting requirements
+  - "threshold": budget amount suggests a high-value procurement
+  - "restricted": text names a supplier that could be restricted
+  - "lead_time": delivery timeline appears very tight
+  - "capacity": requested quantity is unusually large
+  - "multi_country": delivery spans multiple countries
+  - "multilingual": request text is not in English
 - If the text is missing key information such as quantity, budget, or specification, include "missing_info".
 - If the text contains conflicting or internally inconsistent details, include "contradictory".
 - If the text names a supplier explicitly, set preferred_supplier_mentioned to that supplier name (a string, NOT a boolean). Never set preferred_supplier_mentioned to true/false.
 - Default status to "new" unless metadata explicitly provides another value.
-- CRITICAL field names — use these exact keys, no synonyms: budget_amount (not "budget"), incumbent_supplier (not "incumbent"), preferred_supplier_mentioned (not "preferred_supplier"), business_unit (not "businessUnit"), required_by_date (not "required_date" or "deadline").
 - delivery_countries should default to [country] when not otherwise specified and country is known.
 - data_residency_constraint and esg_requirement default to false unless the text or metadata clearly indicates true.
 - Convert shorthand numbers to plain integers: "400k" → 400000, "1.5M" → 1500000, "€400k" → 400000. Never use strings for numeric fields.
@@ -270,7 +281,7 @@ def extract_request(
         messages=[
             {
                 "role": "system",
-                "content": "You are a careful procurement data extraction assistant. Always respond with valid JSON only.",
+                "content": "/no_think You are a careful procurement data extraction assistant. Respond with a single valid JSON object only. Do not include any reasoning, markdown, or text outside the JSON.",
             },
             {
                 "role": "user",
@@ -278,6 +289,8 @@ def extract_request(
             },
         ],
         response_format={"type": "json_object"},
+        temperature=0.1,
+        max_tokens=2000,
     )
 
     result = json.loads(response.choices[0].message.content)

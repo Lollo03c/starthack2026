@@ -358,6 +358,7 @@
   let conversationMessages = [];
   let conversationResolved = false;
   let originalRequestText = '';
+  let currentFieldProvenance = null;
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -449,6 +450,7 @@
     conversationMessages = [];
     conversationResolved = false;
     originalRequestText = '';
+    currentFieldProvenance = null;
 
     const chatPhase = $('chat-phase');
     chatPhase.style.display = '';
@@ -574,6 +576,7 @@
           request_json: currentRequestJson,
           issues: currentIssues,
           original_request_text: originalRequestText,
+          field_provenance: currentFieldProvenance,
         }),
       });
 
@@ -589,6 +592,10 @@
       currentRequestJson = data.updated_request_json;
       currentIssues = data.remaining_issues;
       conversationResolved = data.resolved;
+      if (data.updated_field_provenance) {
+        currentFieldProvenance = data.updated_field_provenance;
+        devData.provenance = { field_provenance: currentFieldProvenance, inference_notes: (devData.provenance || {}).inference_notes || null };
+      }
       devData.parsed = currentRequestJson;
 
       appendMessage('assistant', data.reply);
@@ -842,6 +849,7 @@
       const { request_json, field_provenance, inference_notes } = await parseRes.json();
       devData.parsed = request_json;
       devData.provenance = { field_provenance, inference_notes };
+      currentFieldProvenance = field_provenance || null;
 
       // 3. /validate
       updateLoadingStatus('Checking your request…');

@@ -2,6 +2,7 @@ import json
 import os
 
 from groq import Groq
+import groq
 
 MODEL = "qwen/qwen3-32b"
 
@@ -15,56 +16,52 @@ def _get_client() -> Groq:
     return _client
 
 
-SYSTEM_PROMPT = """You are a procurement intelligence assistant. You explain automated sourcing decisions to procurement managers and business stakeholders in clear, professional language. Be specific: reference supplier names, exact prices, policy rule IDs, and scores. Avoid generic filler. Format your response in markdown."""
+SYSTEM_PROMPT = """/no_think You are a procurement decision explainer. Be specific and concise: use supplier names, exact prices, rule IDs, and scores. No filler. Markdown output."""
 
-USER_PROMPT_TEMPLATE = """Below is a structured procurement decision produced by an automated sourcing agent. Explain the decision in a way that a procurement manager or business stakeholder can immediately understand and act on.
-
-{request_block}
-
-Procurement decision JSON:
+USER_PROMPT_TEMPLATE = """Procurement decision JSON:
 ```json
 {output_json}
 ```
 
-Produce a markdown explanation with exactly these five sections:
+Explain this decision concisely for a procurement manager. Use exactly these sections:
 
-## Decision Summary
-2-3 sentences: what was requested, what the system decided (can_proceed or cannot_proceed), and the primary reason.
+## Outcome
+One sentence: can_proceed or cannot_proceed, and the key reason.
 
 ## Top Recommendation
-Explain why the #1 ranked supplier was selected. Reference its price, quality/risk/ESG scores, preferred status, and incumbent status. Note any caveats (e.g. lead time issues, budget gap).
+2–3 sentences: why this supplier was ranked #1 — price, scores, preferred/incumbent status, any caveats.
 
 ## Alternatives
-For each remaining shortlisted supplier (rank 2+): one paragraph per supplier explaining why it ranked lower and what tradeoffs it presents versus #1.
+One sentence per shortlisted supplier (rank 2+): what tradeoff vs #1.
 
 ## Excluded Suppliers
-For each excluded supplier: one bullet explaining the specific constraint(s) that disqualified it (restricted flag, risk threshold, geography, capacity, etc.).
+One bullet per excluded supplier: specific disqualifying constraint.
 
 ## Escalations
-For each escalation: one bullet stating — what triggered it, who must act (escalate_to), and whether it is blocking. Use the rule ID (e.g. AT-002, ER-004).
+One bullet per escalation: rule ID, trigger, who must act, blocking or not.
 
-Keep the total response focused and professional. Do not add extra sections."""
+Be direct. No summaries of the request. No extra sections."""
 
 
 def explain_decision(output_json: dict, request_text: str | None = None) -> str:
-    request_block = ""
-    if request_text:
-        request_block = f"Original request text: \"{request_text}\"\n\n"
-
     prompt = USER_PROMPT_TEMPLATE.format(
-        request_block=request_block,
         output_json=json.dumps(output_json, indent=2),
     )
 
     client = _get_client()
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=900,
-        temperature=0.2,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=1800,
+            temperature=0.2,
+        )
+    except groq.RateLimitError as e:
+        raise RuntimeError(f"Rate limit reached: {e}") from e
+    except groq.InternalServerError as e:
+        raise RuntimeError(f"Model unavailable (over capacity or down): {e}") from e
 
     return response.choices[0].message.content

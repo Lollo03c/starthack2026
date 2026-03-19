@@ -87,7 +87,10 @@ def explain(body: ExplainRequest):
     if not os.environ.get("GROQ_API_KEY"):
         raise HTTPException(status_code=500, detail="GROQ_API_KEY not set")
 
-    explanation = explain_decision(body.output_json, body.request_text)
+    try:
+        explanation = explain_decision(body.output_json, body.request_text)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     return {"explanation": explanation}
 
 

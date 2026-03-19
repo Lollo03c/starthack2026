@@ -22,7 +22,7 @@ def _get_client() -> Groq:
     return _client
 
 
-_SYSTEM_PROMPT = """You are a procurement intake assistant helping a user complete a purchase request form.
+_SYSTEM_PROMPT = """/no_think You are a procurement intake assistant helping a user complete a purchase request form.
 
 Your rules:
 - Ask the user EXACTLY ONE clarifying question per turn — the most critical outstanding issue
@@ -45,6 +45,11 @@ Field types for field_updates:
 - category_l2: string (e.g. "Laptops", "Office Supplies", "Consulting")
 - delivery_countries: array of strings (e.g. ["Switzerland"])
 - currency: string (e.g. "EUR", "CHF")
+- preferred_supplier_mentioned: string (supplier name) or null
+- incumbent_supplier: string (supplier name) or null
+- unit_of_measure: string
+- esg_requirement: boolean (true/false)
+- data_residency_constraint: boolean (true/false)
 
 Set "resolved": true only if you believe ALL outstanding issues are now addressed.
 The server will verify this — your resolved claim may be overridden."""
@@ -56,7 +61,17 @@ def run_chat_turn(messages: list[dict], request_json: dict, issues: list[dict], 
         for i in issues
     )
 
-    system = _SYSTEM_PROMPT + f"\n\nOutstanding issues to resolve:\n{issues_summary}"
+    # Summarize current request state so LLM knows what's already filled
+    key_fields = {
+        k: request_json.get(k)
+        for k in ["quantity", "budget_amount", "category_l1", "category_l2",
+                   "delivery_countries", "currency", "required_by_date",
+                   "preferred_supplier_mentioned", "incumbent_supplier",
+                   "unit_of_measure", "esg_requirement", "data_residency_constraint"]
+    }
+    request_summary = json.dumps(key_fields, ensure_ascii=False)
+
+    system = _SYSTEM_PROMPT + f"\n\nCurrent request state (fields already captured):\n{request_summary}\n\nOutstanding issues to resolve:\n{issues_summary}"
 
     groq_messages = [{"role": "system", "content": system}]
     for m in messages:
