@@ -91,6 +91,33 @@
       overflow-y: auto;
     }
 
+    /* ── Floating chat input bar ─────────────────────────────────── */
+    #chat-area { position: relative; }
+
+    #chat-input-bar {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 38%;
+      width: 100%;
+      max-width: 42rem;
+      padding: 0 1rem;
+      transition: bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 10;
+      background: transparent;
+      border: none;
+    }
+    #chat-input-bar.chat-mode {
+      bottom: 1rem;
+    }
+    #chat-input-bar .input-pill {
+      background: white;
+      border-radius: 1.5rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      border: 1px solid #e5e7eb;
+      padding: 0.5rem 0.75rem;
+    }
+
     /* ── Dashboard panel ──────────────────────────────────────── */
     @keyframes panelFadeIn {
       from { opacity: 0; transform: translateY(8px); }
@@ -118,11 +145,64 @@
     }
     .dashboard-visible {
       width: 50%;
-      min-width: 340px;
       overflow-y: auto;
-      border-right: 1px solid #e5e7eb;
-      transition: width 0.4s ease, padding 0.4s ease, min-width 0.4s ease;
+      transition: width 0.4s ease, padding 0.4s ease;
     }
+
+    /* Resize handle */
+    #resize-handle {
+      width: 8px;
+      cursor: col-resize;
+      background: #e5e7eb;
+      display: none;
+      position: relative;
+      flex-shrink: 0;
+      z-index: 10;
+      transition: background 0.15s ease;
+    }
+    #resize-handle:hover { background: #93c5fd; }
+    #resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 4px;
+      height: 32px;
+      background: #9ca3af;
+      border-radius: 2px;
+    }
+    #resize-handle:hover::after { background: #3b82f6; }
+
+    /* Dashboard reopen tab */
+    #dashboard-reopen-btn {
+      position: fixed;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      background: #6b7280;
+      border: none;
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 25;
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+    #dashboard-reopen-btn:not(.hidden) {
+      display: flex;
+    }
+    #dashboard-reopen-btn:hover {
+      background: #4b5563;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      transform: translateY(-50%) scale(1.08);
+    }
+
+    /* Disable transitions during drag */
+    .no-transition { transition: none !important; }
 
     @media (max-width: 1023px) {
       .dashboard-visible {
@@ -133,8 +213,9 @@
         min-width: 100% !important;
         z-index: 30;
         background: #f9fafb;
-        border-right: none !important;
       }
+      #resize-handle { display: none !important; }
+      #dashboard-reopen-btn { display: none !important; }
     }
   </style>
 </head>
@@ -152,11 +233,6 @@
       <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
     </div>
     <div class="flex items-center gap-3">
-      <button id="dashboard-toggle-btn"
-        class="hidden text-xs font-semibold border px-3 py-1.5 rounded-lg transition text-blue-700 border-blue-200 hover:border-blue-400 hover:text-blue-900"
-        onclick="toggleDashboard()">
-        Show Dashboard
-      </button>
       <button id="btn-new-request"
         class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition"
         onclick="resetToInitial()">
@@ -171,11 +247,14 @@
     <!-- Dashboard panel (hidden initially, slides in on toggle) -->
     <div id="dashboard-panel" class="dashboard-hidden p-6 space-y-6 bg-gray-50"></div>
 
+    <!-- Resize handle -->
+    <div id="resize-handle"></div>
+
     <!-- Chat area -->
     <div id="chat-area" class="flex-1 flex flex-col min-w-0">
 
       <!-- Hero content (visible on initial load, fades out on submit) -->
-      <div id="hero-content" class="flex-1 flex flex-col items-center justify-center px-4 pb-16 transition-all duration-400">
+      <div id="hero-content" class="flex-1 flex flex-col items-center justify-center px-4 transition-all duration-400">
         <!-- Brand -->
         <div class="flex items-center gap-2 mb-10 select-none">
           <div class="w-9 h-9 bg-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow">CQ</div>
@@ -192,7 +271,7 @@
       </div>
 
       <!-- Messages container (hidden until first message) -->
-      <div id="messages" class="hidden flex-1 overflow-y-auto px-4 py-6 pb-4 max-w-2xl mx-auto w-full space-y-3"></div>
+      <div id="messages" class="hidden flex-1 overflow-y-auto px-4 py-6 pb-24 max-w-2xl mx-auto w-full space-y-3"></div>
 
       <!-- Policy recheck indicator -->
       <div id="recheck-indicator" class="hidden text-center py-1 shrink-0">
@@ -200,16 +279,16 @@
       </div>
 
       <!-- Input bar (always present) -->
-      <div id="chat-input-bar" class="border-t border-gray-200 bg-white px-4 py-3 shrink-0">
-        <div class="max-w-2xl mx-auto flex items-end gap-3">
+      <div id="chat-input-bar">
+        <div class="input-pill flex items-end gap-3">
           <textarea
             id="chat-input"
-            class="flex-1 bg-gray-50 border border-gray-200 rounded-xl outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
+            class="flex-1 bg-transparent border-none outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
             placeholder="e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k"
             rows="2"
           ></textarea>
           <button id="chat-send-btn"
-            class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl flex items-center justify-center text-white transition shadow"
+            class="shrink-0 w-9 h-9 bg-blue-700 hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-full flex items-center justify-center text-white transition shadow"
             title="Send">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
@@ -219,6 +298,13 @@
       </div>
     </div>
   </div>
+
+  <!-- Reopen dashboard tab (left edge, visible when dashboard collapsed after first open) -->
+  <button id="dashboard-reopen-btn" class="hidden" onclick="openDashboardFromReopen()" title="Open Dashboard">
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+  </button>
 </div>
 
 <!-- Hidden optional fields (values kept for metadata compatibility) -->
@@ -348,6 +434,8 @@
   let currentSupplierShortlist = [];
   let isDashboardVisible = false;
   let dashboardReady = false;
+  let dashboardWidthPx = null;
+  let dashboardUnlocked = false; // true once "Open Dashboard" button has been shown in chat
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
@@ -499,6 +587,9 @@
     // Fade out hero
     const hero = $('hero-content');
     hero.classList.add('hero-fade-out');
+
+    // Slide input bar to bottom
+    $('chat-input-bar').classList.add('chat-mode');
 
     // Show top bar and messages after hero fades
     setTimeout(() => {
@@ -761,7 +852,6 @@
       // 2. Populate dashboard (hidden) and mark ready
       refreshOutputPanel(output_json, currentRequestJson);
       dashboardReady = true;
-      $('dashboard-toggle-btn').classList.remove('hidden');
 
       // 3. Get results presentation from LLM
       const chatRes = await fetch('/results-chat', {
@@ -815,7 +905,6 @@
 
   // ── Dashboard toggle ───────────────────────────────────────────────────────
   function showOpenDashboardButton() {
-    // Don't add if already present
     if (document.getElementById('open-dashboard-btn')) return;
 
     const container = getActiveMessageContainer();
@@ -823,18 +912,23 @@
     wrapper.className = 'flex justify-start my-3 para-animate';
     wrapper.innerHTML = `
       <button id="open-dashboard-btn"
-        onclick="toggleDashboard(true)"
         class="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition shadow-sm text-sm flex items-center gap-2">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         Open Dashboard
       </button>`;
+    wrapper.querySelector('button').addEventListener('click', () => {
+      toggleDashboard(true);
+      wrapper.remove();
+    });
     container.appendChild(wrapper);
     container.scrollTop = container.scrollHeight;
+
   }
 
   function toggleDashboard(forceShow) {
     const panel = $('dashboard-panel');
-    const btn = $('dashboard-toggle-btn');
+    const handle = $('resize-handle');
+    const reopenBtn = $('dashboard-reopen-btn');
 
     if (forceShow === true) {
       isDashboardVisible = true;
@@ -845,15 +939,83 @@
     }
 
     if (isDashboardVisible) {
+      dashboardUnlocked = true;
       panel.classList.remove('dashboard-hidden');
       panel.classList.add('dashboard-visible');
-      btn.textContent = 'Hide Dashboard';
+      if (dashboardWidthPx) panel.style.width = dashboardWidthPx + 'px';
+      handle.style.display = 'block';
+      reopenBtn.classList.add('hidden');
+      // Remove in-chat "Open Dashboard" button
+      const chatBtn = document.getElementById('open-dashboard-btn');
+      if (chatBtn) chatBtn.closest('.flex')?.remove();
     } else {
       panel.classList.remove('dashboard-visible');
       panel.classList.add('dashboard-hidden');
-      btn.textContent = 'Show Dashboard';
+      panel.style.width = '';
+      handle.style.display = 'none';
+      if (dashboardUnlocked) reopenBtn.classList.remove('hidden');
     }
   }
+
+  function openDashboardFromReopen() {
+    toggleDashboard(true);
+  }
+
+  // ── Drag resize system ──────────────────────────────────────────────────────
+  (function initDragResize() {
+    const handle = $('resize-handle');
+    const panel = $('dashboard-panel');
+    const container = $('main-content');
+    let dragging = false, startX = 0, startWidth = 0;
+
+    function onPointerDown(e) {
+      e.preventDefault();
+      dragging = true;
+      startX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      startWidth = panel.getBoundingClientRect().width;
+      panel.classList.add('no-transition');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    function onPointerMove(e) {
+      if (!dragging) return;
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
+      const dx = clientX - startX;
+      const containerWidth = container.getBoundingClientRect().width;
+      const maxWidth = containerWidth - 8 - 300; // 8px handle + 300px min chat
+      const newWidth = Math.max(0, Math.min(startWidth + dx, maxWidth));
+      panel.style.width = newWidth + 'px';
+    }
+
+    function onPointerUp() {
+      if (!dragging) return;
+      dragging = false;
+      panel.classList.remove('no-transition');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      const currentWidth = panel.getBoundingClientRect().width;
+      if (currentWidth < 100) {
+        // Collapse
+        toggleDashboard(false);
+      } else if (currentWidth < 280) {
+        // Snap to minimum
+        panel.style.width = '280px';
+        dashboardWidthPx = 280;
+      } else {
+        dashboardWidthPx = currentWidth;
+      }
+    }
+
+    handle.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('mousemove', onPointerMove);
+    document.addEventListener('mouseup', onPointerUp);
+
+    handle.addEventListener('touchstart', onPointerDown, { passive: false });
+    document.addEventListener('touchmove', onPointerMove, { passive: false });
+    document.addEventListener('touchend', onPointerUp);
+  })();
 
   // ── Suggestion chips ──────────────────────────────────────────────────────
   function renderSuggestionChips(out) {
@@ -1724,7 +1886,6 @@
       // Populate dashboard
       refreshOutputPanel(data.output_json, data.request_json);
       dashboardReady = true;
-      $('dashboard-toggle-btn').classList.remove('hidden');
 
       // Get results presentation
       const chatRes = await fetch('/results-chat', {
@@ -1780,7 +1941,10 @@
     toggleDashboard(false);
     $('dashboard-panel').innerHTML = '';
     dashboardReady = false;
-    $('dashboard-toggle-btn').classList.add('hidden');
+    $('dashboard-reopen-btn').classList.add('hidden');
+    dashboardWidthPx = null;
+    dashboardUnlocked = false;
+    $('resize-handle').style.display = 'none';
 
     // Clear messages
     $('messages').innerHTML = '';
@@ -1818,6 +1982,9 @@
       hero.style.opacity = '1';
       hero.style.transform = 'translateY(0)';
     });
+
+    // Reset input bar position
+    $('chat-input-bar').classList.remove('chat-mode');
 
     // Reset input
     $('chat-input').value = '';
