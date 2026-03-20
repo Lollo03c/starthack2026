@@ -128,10 +128,12 @@
     #dashboard-panel section {
       animation: panelFadeIn 0.35s ease forwards;
     }
-    #dashboard-panel section:nth-child(2) { animation-delay: 80ms; }
-    #dashboard-panel section:nth-child(3) { animation-delay: 160ms; }
-    #dashboard-panel section:nth-child(4) { animation-delay: 240ms; }
-    #dashboard-panel section:nth-child(5) { animation-delay: 320ms; }
+    #dashboard-panel section:nth-child(2) { animation-delay: 60ms; }
+    #dashboard-panel section:nth-child(3) { animation-delay: 120ms; }
+    #dashboard-panel section:nth-child(4) { animation-delay: 180ms; }
+    #dashboard-panel section:nth-child(5) { animation-delay: 240ms; }
+    #dashboard-panel section:nth-child(6) { animation-delay: 300ms; }
+    #dashboard-panel section:nth-child(7) { animation-delay: 360ms; }
 
     /* Dashboard transitions */
     .dashboard-hidden {
@@ -432,7 +434,6 @@
   let dashboardWidthPx = null;
   let dashboardUnlocked = false; // true once "Open Dashboard" button has been shown in chat
   let activeRankingMetric = 'overall';
-  let isRankingPanelOpen = false;
   let explicitShipSupplierName = null;
 
   const RANKING_METRICS = {
@@ -456,6 +457,45 @@
       shortLabel: 'Lowest risk',
       helper: 'Ranks suppliers by lowest operational risk score.',
     },
+  };
+
+  const ESCALATION_TITLES = {
+    'ER-001': 'Budget Shortfall',
+    'ER-002': 'Restricted Supplier',
+    'ER-003': 'High-Value Approval Needed',
+    'ER-004': 'Insufficient Quotes',
+    'ER-005': 'Data Residency Conflict',
+    'ER-006': 'Single-Supplier Risk',
+    'ER-007': 'Capacity Concern',
+    'ER-008': 'Currency Compliance',
+    'ER-009': 'Mandatory Supplier Conflict',
+    'ER-010': 'Alternative Supplier Approval',
+    'ER-011': 'Better Alternative Available',
+  };
+
+  const ESCALATION_HELP = {
+    'ER-001': 'Increase the budget or reduce the quantity to fit within limits.',
+    'ER-002': 'Choose a different supplier or request an exception override.',
+    'ER-003': 'Confirm you have the required approval level to proceed.',
+    'ER-004': 'Acknowledge the single-quote situation or obtain additional quotes.',
+    'ER-005': 'Remove the data residency requirement or confirm an exception.',
+    'ER-006': 'Acknowledge the single-supplier risk or add alternative suppliers.',
+    'ER-007': 'Verify the supplier can meet the required capacity.',
+    'ER-008': 'Switch to a compliant currency or confirm an exception.',
+    'ER-009': 'Remove the exclusive supplier constraint or approve an exception.',
+    'ER-010': 'Approve the alternative supplier to proceed.',
+    'ER-011': 'Approve switching to the better-ranked supplier.',
+  };
+
+  const EXCLUSION_LABELS = {
+    'category_match':    { label: 'Category',    color: 'bg-purple-100 text-purple-700' },
+    'region_match':      { label: 'Geography',   color: 'bg-blue-100 text-blue-700' },
+    'not_restricted':    { label: 'Restricted',  color: 'bg-red-100 text-red-700' },
+    'capacity_check':    { label: 'Capacity',    color: 'bg-orange-100 text-orange-700' },
+    'moq_check':         { label: 'Min. Order',  color: 'bg-yellow-100 text-yellow-700' },
+    'budget_check':      { label: 'Budget',      color: 'bg-amber-100 text-amber-700' },
+    'lead_time_check':   { label: 'Lead Time',   color: 'bg-teal-100 text-teal-700' },
+    'policy_compliant':  { label: 'Policy',      color: 'bg-gray-100 text-gray-700' },
   };
 
   // ── Dev panel visibility ───────────────────────────────────────────────────
@@ -528,16 +568,7 @@
   $('dev-modal').addEventListener('click', e => {
     if (e.target === $('dev-modal')) closeDevModal();
   });
-  document.addEventListener('click', e => {
-    const toggle = e.target.closest('[data-ranking-toggle]');
-    if (!toggle) return;
-    const parent = toggle.closest('[data-analysis-section]') || toggle.closest('section') || toggle.parentElement?.parentElement;
-    const panel = parent?.querySelector('[data-ranking-panel]');
-    if (!panel) return;
-    isRankingPanelOpen = panel.classList.contains('hidden');
-    panel.classList.toggle('hidden');
-    toggle.textContent = panel.classList.contains('hidden') ? 'Show ranking' : 'Hide ranking';
-  });
+  // ranking toggle removed — table is always visible
   document.addEventListener('click', e => {
     const jump = e.target.closest('[data-analysis-jump]');
     if (!jump) return;
@@ -1295,39 +1326,21 @@
 
   function renderRankingSwitcher(out) {
     const ranked = getActiveRankedOutput(out);
-    if (!ranked || !ranked.ui_top_supplier) {
-      return '';
-    }
-
-    const top = ranked.ui_top_supplier;
-    const officialTop = ranked.ui_official_top_supplier;
-    const metricMeta = ranked.ui_metric_meta;
-    const helper = activeRankingMetric === 'overall'
-      ? metricMeta.helper
-      : `${metricMeta.helper} Default engine recommendation remains ${escapeHtml(officialTop?.supplier_name || '—')} by overall score.`;
+    if (!ranked || !ranked.ui_top_supplier) return '';
 
     return `
-      <div class="flex flex-col gap-3 p-4">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">Shipping Preference</div>
-            <div class="mt-1 text-sm font-semibold text-gray-900">${escapeHtml(top.supplier_name)}</div>
-            <p class="mt-1 text-xs leading-relaxed text-gray-500">${helper}</p>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          ${Object.entries(RANKING_METRICS).map(([key, meta]) => `
-            <button
-              type="button"
-              data-ranking-metric="${key}"
-              class="rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                key === activeRankingMetric
-                  ? 'border-blue-700 bg-blue-700 text-white'
-                  : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:text-blue-700'
-              }"
-            >${escapeHtml(meta.shortLabel)}</button>
-          `).join('')}
-        </div>
+      <div class="flex flex-wrap gap-2 p-4 pb-2">
+        ${Object.entries(RANKING_METRICS).map(([key, meta]) => `
+          <button
+            type="button"
+            data-ranking-metric="${key}"
+            class="rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              key === activeRankingMetric
+                ? 'border-blue-700 bg-blue-700 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:border-blue-400 hover:text-blue-700'
+            }"
+          >${escapeHtml(meta.shortLabel)}</button>
+        `).join('')}
       </div>`;
   }
 
@@ -1387,204 +1400,155 @@
     sections.forEach(section => analysisObserver.observe(section));
   }
 
-  function renderRankingTable(shortlist, hidden = false) {
+  function renderRankingTable(shortlist) {
     if (!shortlist || shortlist.length === 0) return '';
-    const shouldHide = hidden && !isRankingPanelOpen;
-    return `<div class="${shouldHide ? 'hidden ' : ''}mt-4" data-ranking-panel>
-      <div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
-        ${renderRankingSwitcher(loadedOutput)}
-        <div class="border-t border-gray-200 overflow-x-auto">
-          <table class="w-full text-xs border-collapse bg-white">
-            <thead>
-              <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
-                <th class="px-3 py-2.5 font-semibold">#</th>
-                <th class="px-3 py-2.5 font-semibold">Supplier</th>
-                <th class="px-3 py-2.5 font-semibold text-right">Total €</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
-                <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
-                <th class="px-3 py-2.5 font-semibold text-center">Lead</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100">
-              ${shortlist.map((s, idx) => `<tr class="${idx === 0 ? 'bg-blue-50' : 'bg-white'}">
-                <td class="px-3 py-2.5 font-bold text-gray-400">${s.ui_rank ?? s.rank}</td>
-                <td class="px-3 py-2.5">
-                  <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
-                  <div class="text-gray-400 text-[11px]">${s.preferred ? 'Preferred' : 'Standard'}${s.incumbent ? ' • Incumbent' : ''}</div>
-                </td>
-                <td class="px-3 py-2.5 text-right font-mono font-semibold">${fmt(s.total_price_eur)}</td>
-                <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
-                <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
-                <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
-                <td class="px-3 py-2.5 text-center">${s.effective_lead_time_days ?? s.standard_lead_time_days ?? '—'}d</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
+    return `<div class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      ${renderRankingSwitcher(loadedOutput)}
+      <div class="border-t border-gray-200 overflow-x-auto">
+        <table class="w-full text-xs border-collapse bg-white">
+          <thead>
+            <tr class="bg-gray-50 text-gray-500 text-left border-b border-gray-200">
+              <th class="px-3 py-2.5 font-semibold">#</th>
+              <th class="px-3 py-2.5 font-semibold">Supplier</th>
+              <th class="px-3 py-2.5 font-semibold text-right">Total Price</th>
+              <th class="px-3 py-2.5 font-semibold text-center">Lead Time</th>
+              <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
+              <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
+              <th class="px-3 py-2.5 font-semibold text-center">ESG</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            ${shortlist.map((s, idx) => `<tr class="${idx === 0 ? 'bg-blue-50' : 'bg-white'}">
+              <td class="px-3 py-2.5 font-bold text-gray-400">${s.ui_rank ?? s.rank}</td>
+              <td class="px-3 py-2.5">
+                <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
+                <div class="text-gray-400 text-[11px]">${s.preferred ? 'Preferred' : 'Standard'}${s.incumbent ? ' • Incumbent' : ''}</div>
+              </td>
+              <td class="px-3 py-2.5 text-right font-mono font-semibold">EUR ${fmt(s.total_price_eur)}</td>
+              <td class="px-3 py-2.5 text-center">${s.effective_lead_time_days ?? s.standard_lead_time_days ?? '—'}d</td>
+              <td class="px-3 py-2.5 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
+              <td class="px-3 py-2.5 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
+              <td class="px-3 py-2.5 text-center ${scoreColor(s.esg_score)}">${s.esg_score ?? '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
       </div>
     </div>`;
   }
 
-  function renderTopRecommendationVisual(out) {
+  function renderCurrentChoiceHtml(out) {
     const ranked = getActiveRankedOutput(out);
     if (!ranked?.ui_top_supplier) return '';
-    // Hero card always shows the canonical ship supplier (unchanged by metric toggle)
     const shipSupplier = getCanonicalShipSupplier(out) || ranked.ui_official_top_supplier;
     if (!shipSupplier) return '';
-    const metricMeta = ranked.ui_metric_meta;
-    const note = describeMetricReason(shipSupplier, 'overall');
+    const explanation = shipSupplier.fit_rationale || shipSupplier.recommendation_note || '';
+    const regions = (shipSupplier.service_regions || []).join(', ') || '—';
+    const capacity = shipSupplier.capacity_per_month != null ? fmtInt(shipSupplier.capacity_per_month) + ' /mo' : '—';
 
-    return `<div class="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Top Recommendation</div>
-          <h4 class="mt-1 text-lg font-semibold text-gray-900">${escapeHtml(shipSupplier.supplier_name)}</h4>
-          <p class="mt-1 text-sm text-gray-600">${escapeHtml(note)}</p>
-          ${shipSupplier.recommendation_note ? `<p class="mt-2 text-xs text-gray-500">${escapeHtml(shipSupplier.recommendation_note)}</p>` : ''}
-        </div>
-        <button type="button" data-ranking-toggle class="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-semibold text-blue-700 transition hover:border-blue-500 hover:text-blue-900">
-          ${isRankingPanelOpen ? 'Hide ranking' : 'Show ranking'}
-        </button>
+    return `<div class="rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+      <div>
+        <h4 class="text-lg font-semibold text-gray-900">${escapeHtml(shipSupplier.supplier_name)}</h4>
+        ${explanation ? `<p class="mt-1 text-sm leading-relaxed text-gray-600">${escapeHtml(explanation)}</p>` : ''}
       </div>
       <div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         ${renderMetric('Total Price', `EUR ${fmt(shipSupplier.total_price_eur)}`)}
         ${renderMetric('Unit Price', `EUR ${fmt(shipSupplier.unit_price_eur)}`)}
-        ${renderMetric('Composite Score', (shipSupplier.composite_score ?? 0).toFixed(3), 'text-blue-700')}
-        ${renderMetric('Quality', shipSupplier.quality_score ?? '—', scoreColor(shipSupplier.quality_score))}
-        ${renderMetric('Risk', shipSupplier.risk_score ?? '—', scoreColor(shipSupplier.risk_score, true))}
-        ${renderMetric('ESG', shipSupplier.esg_score ?? '—', scoreColor(shipSupplier.esg_score))}
         ${renderMetric('Lead Time', `${shipSupplier.effective_lead_time_days ?? shipSupplier.standard_lead_time_days ?? '—'} days`)}
+        ${renderMetric('Regions', regions)}
+        ${renderMetric('Capacity', capacity)}
       </div>
-      <div class="mt-3 flex flex-wrap gap-2 text-xs">
-        ${shipSupplier.preferred ? '<span class="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-800">Preferred supplier</span>' : ''}
-        ${shipSupplier.incumbent ? '<span class="rounded-full bg-indigo-100 px-2.5 py-1 font-semibold text-indigo-800">Incumbent</span>' : ''}
-        ${shipSupplier.policy_compliant ? '<span class="rounded-full bg-green-100 px-2.5 py-1 font-semibold text-green-800">Policy compliant</span>' : '<span class="rounded-full bg-red-100 px-2.5 py-1 font-semibold text-red-800">Not compliant</span>'}
-      </div>
-      ${renderRankingTable(ranked.ui_ranked_shortlist || [], true)}
     </div>`;
   }
 
-  function renderMandatedSupplierVisual(out) {
+  function renderSupplierPreferenceHtml(out) {
     const mandated = out.policy_evaluation?.mandated_supplier;
     if (!mandated) return '';
-
     const isConflict = mandated.must_use && mandated.status !== 'satisfied';
-    const boxClass = isConflict
-      ? 'border-red-200 bg-red-50/80'
-      : mandated.must_use
-        ? 'border-blue-200 bg-blue-50/80'
-        : 'border-gray-200 bg-gray-50/80';
-    const badgeClass = isConflict
-      ? 'bg-red-600 text-white'
-      : mandated.must_use
-        ? 'bg-blue-600 text-white'
-        : 'bg-gray-700 text-white';
-    const badgeText = mandated.must_use ? 'MANDATED SUPPLIER' : 'SUPPLIER PREFERENCE';
+    if (isConflict) return ''; // escalation card handles conflicts
 
-    return `<div class="rounded-2xl border p-4 ${boxClass}">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="rounded-full px-2.5 py-1 text-[11px] font-bold ${badgeClass}">${badgeText}</span>
-        <span class="text-sm font-semibold text-gray-900">${escapeHtml(mandated.supplier || '—')}</span>
+    const label = mandated.must_use ? 'Mandated' : 'Preferred';
+    return `<div class="border-l-4 border-gray-400 rounded-r-xl bg-white p-4">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-bold text-gray-900">${escapeHtml(mandated.supplier || '—')}</span>
+        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">${label}</span>
       </div>
-      <p class="mt-2 text-sm font-semibold text-gray-900">${escapeHtml(mandated.headline || '')}</p>
-      <p class="mt-1 text-sm leading-relaxed text-gray-700">${escapeHtml(mandated.detail || '')}</p>
+      ${mandated.detail ? `<p class="mt-1 text-sm leading-relaxed text-gray-600">${escapeHtml(mandated.detail)}</p>` : ''}
     </div>`;
   }
 
-  function renderAlternativesVisual(out) {
+  function renderAlternativeCardsHtml(out) {
     const shortlist = getActiveRankedOutput(out)?.ui_ranked_shortlist || [];
     if (shortlist.length <= 1) return '';
     const top = shortlist[0];
     const alternatives = shortlist.slice(1);
 
-    return `<div class="mt-5 overflow-x-auto rounded-2xl border border-gray-200">
-      <table class="w-full text-xs border-collapse bg-white">
-        <thead>
-          <tr class="bg-gray-50 text-left text-gray-500 border-b border-gray-200">
-            <th class="px-3 py-2.5 font-semibold">Supplier</th>
-            <th class="px-3 py-2.5 font-semibold text-right">Delta vs #1</th>
-            <th class="px-3 py-2.5 font-semibold text-center">Quality</th>
-            <th class="px-3 py-2.5 font-semibold text-center">Risk</th>
-            <th class="px-3 py-2.5 font-semibold text-center">Lead</th>
-            <th class="px-3 py-2.5 font-semibold">Tradeoff</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          ${alternatives.map(s => {
-            const delta = (s.total_price_eur ?? 0) - (top.total_price_eur ?? 0);
-            const deltaLabel = `${delta >= 0 ? '+' : '-'}EUR ${fmt(Math.abs(delta))}`;
-            const tradeoff = delta > 0
-              ? 'Costs more than #1 in exchange for a different quality-risk profile.'
-              : 'Costs less than #1 but gives up strength on other evaluation factors.';
-            return `<tr>
-              <td class="px-3 py-3">
-                <div class="font-semibold text-gray-800">${escapeHtml(s.supplier_name)}</div>
-                <div class="text-[11px] text-gray-400">Rank ${s.ui_rank ?? s.rank}${s.preferred ? ' • Preferred' : ''}</div>
-              </td>
-              <td class="px-3 py-3 text-right font-mono ${delta <= 0 ? 'text-green-700' : 'text-orange-700'}">${deltaLabel}</td>
-              <td class="px-3 py-3 text-center ${scoreColor(s.quality_score)}">${s.quality_score ?? '—'}</td>
-              <td class="px-3 py-3 text-center ${scoreColor(s.risk_score, true)}">${s.risk_score ?? '—'}</td>
-              <td class="px-3 py-3 text-center">${s.effective_lead_time_days ?? s.standard_lead_time_days ?? '—'}d</td>
-              <td class="px-3 py-3 text-gray-600">${escapeHtml(s.recommendation_note || tradeoff)}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+    return `<div class="grid gap-3">
+      ${alternatives.map(s => {
+        const delta = (s.total_price_eur ?? 0) - (top.total_price_eur ?? 0);
+        const deltaLabel = `${delta >= 0 ? '+' : ''}EUR ${fmt(delta)}`;
+        const deltaColor = delta <= 0 ? 'text-green-700' : 'text-orange-700';
+        const lead = s.effective_lead_time_days ?? s.standard_lead_time_days ?? '—';
+        const tradeoff = s.recommendation_note || (delta > 0
+          ? 'Higher price but may offer advantages on delivery or compliance.'
+          : 'Lower price with potential tradeoffs on other factors.');
+        return `<div class="rounded-xl border border-gray-200 bg-white p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="text-sm font-semibold text-gray-900">${escapeHtml(s.supplier_name)}</span>
+              <span class="ml-2 text-xs text-gray-400">Rank ${s.ui_rank ?? s.rank}${s.preferred ? ' • Preferred' : ''}</span>
+            </div>
+            <span class="font-mono text-xs font-semibold ${deltaColor}">${deltaLabel}</span>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
+            <span>EUR ${fmt(s.total_price_eur)}</span>
+            <span>${lead} days lead</span>
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-gray-600">${escapeHtml(tradeoff)}</p>
+        </div>`;
+      }).join('')}
     </div>`;
   }
 
-  function inferExclusionLabel(reason) {
-    const text = (reason || '').toLowerCase();
-    if (text.includes('risk')) return 'Risk';
-    if (text.includes('restrict')) return 'Restriction';
-    if (text.includes('geograph') || text.includes('country')) return 'Geography';
-    if (text.includes('capacity')) return 'Capacity';
-    if (text.includes('preferred')) return 'Preference';
-    return 'Constraint';
+  function getExclusionTag(supplier) {
+    const stage = supplier.eliminated_at;
+    if (stage && EXCLUSION_LABELS[stage]) return EXCLUSION_LABELS[stage];
+    // Fallback: infer from reason text
+    const text = (supplier.reason || '').toLowerCase();
+    if (text.includes('restrict')) return { label: 'Restricted', color: 'bg-red-100 text-red-700' };
+    if (text.includes('geograph') || text.includes('country') || text.includes('region')) return { label: 'Geography', color: 'bg-blue-100 text-blue-700' };
+    if (text.includes('capacity')) return { label: 'Capacity', color: 'bg-orange-100 text-orange-700' };
+    if (text.includes('budget') || text.includes('price')) return { label: 'Budget', color: 'bg-amber-100 text-amber-700' };
+    if (text.includes('lead time')) return { label: 'Lead Time', color: 'bg-teal-100 text-teal-700' };
+    return { label: 'Constraint', color: 'bg-gray-100 text-gray-700' };
   }
 
-  function renderExcludedVisual(out) {
+  function renderExcludedCardsHtml(out) {
     const excluded = out.suppliers_excluded || [];
     if (excluded.length === 0) return '';
 
-    return `<div class="mt-5 grid gap-3">
-      ${excluded.map(s => `<div class="rounded-2xl border border-red-200 bg-red-50/60 p-4">
-        <div class="flex flex-wrap items-center gap-2">
-          <h4 class="text-sm font-semibold text-gray-900">${escapeHtml(s.supplier_name)}</h4>
-          <span class="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-red-700 border border-red-200">${inferExclusionLabel(s.reason)}</span>
-        </div>
-        <p class="mt-2 text-sm leading-relaxed text-gray-700">${escapeHtml(s.reason)}</p>
-      </div>`).join('')}
+    return `<div class="grid gap-3">
+      ${excluded.map(s => {
+        const tag = getExclusionTag(s);
+        return `<div class="rounded-xl border border-gray-200 bg-white p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span class="text-sm font-semibold text-gray-900">${escapeHtml(s.supplier_name)}</span>
+              <span class="ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tag.color}">${tag.label}</span>
+            </div>
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-gray-600">${escapeHtml(s.reason)}</p>
+        </div>`;
+      }).join('')}
     </div>`;
   }
 
-  function renderEscalationsVisual(out) {
-    const escalations = out.escalations || [];
-    if (escalations.length === 0) return '';
-
-    return `<div class="mt-5 grid gap-3">
-      ${escalations.map(e => `<div class="rounded-2xl border p-4 ${e.blocking ? 'border-red-200 bg-red-50/70' : 'border-yellow-200 bg-yellow-50/70'}">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="rounded-full px-2 py-0.5 text-[11px] font-bold ${e.blocking ? 'bg-red-600 text-white' : 'bg-yellow-500 text-white'}">${e.blocking ? 'BLOCKING' : 'INFO'}</span>
-          <span class="text-xs font-semibold text-gray-500">${escapeHtml(e.rule || e.escalation_id)}</span>
-          <span class="text-sm font-semibold text-gray-900">${escapeHtml(e.escalation_id)}</span>
-        </div>
-        <p class="mt-2 text-sm leading-relaxed text-gray-700">${escapeHtml(e.trigger)}</p>
-        <div class="mt-3 flex flex-wrap gap-2 text-xs">
-          <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Owner: ${escapeHtml(e.escalate_to || '—')}</span>
-          <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Rule: ${escapeHtml(e.rule || '—')}</span>
-        </div>
-      </div>`).join('')}
-    </div>`;
-  }
+  // renderEscalationsVisual removed — replaced by renderActionsRequiredHtml
 
   function renderSectionVisual(title, out) {
-    if (title === 'Mandated Supplier') return renderMandatedSupplierVisual(out);
-    if (title === 'Top Recommendation') return renderTopRecommendationVisual(out);
-    if (title === 'Alternatives') return renderAlternativesVisual(out);
-    if (title === 'Excluded Suppliers') return renderExcludedVisual(out);
-    if (title === 'Escalations') return renderEscalationsVisual(out);
+    if (title === 'Mandated Supplier' || title === 'Supplier Preference') return renderSupplierPreferenceHtml(out);
+    if (title === 'Top Recommendation' || title === 'Current Choice') return renderCurrentChoiceHtml(out);
+    if (title === 'Alternatives') return renderAlternativeCardsHtml(out);
+    if (title === 'Excluded Suppliers') return renderExcludedCardsHtml(out);
     return '';
   }
 
@@ -1678,44 +1642,58 @@
 
     let html = '';
 
-    // 1. Status indicator
-    html += buildStatusBannerHtml(out.recommendation || {});
-
-    // 2. Escalations (blocking first, then info)
-    const escs = out.escalations || [];
-    const sortedEscs = [...escs].sort((a, b) => (b.blocking ? 1 : 0) - (a.blocking ? 1 : 0));
-    html += renderEscalationsPanelHtml(sortedEscs);
-
-    // 3. Mandated supplier constraint (skip if conflict — escalation card covers it)
-    const mandated = out.policy_evaluation?.mandated_supplier;
-    const isConflict = mandated && mandated.must_use && mandated.status !== 'satisfied';
-    if (!isConflict) {
-      const mandatedHtml = renderMandatedSupplierVisual(out);
-      if (mandatedHtml) {
-        html += `<section>
-          <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Constraint</div>
-          ${mandatedHtml}
-        </section>`;
-      }
-    }
-
-    // 4. Top recommendation + ranking table
+    // 1. Title
     html += `<section>
-      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Comparison</div>
-      ${renderTopRecommendationVisual(out)}
+      <h2 class="text-lg font-bold text-gray-900">Request Summary</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Visual summary of the sourcing decision</p>
     </section>`;
 
-    // 5. Alternatives
-    const altHtml = renderAlternativesVisual(out);
-    if (altHtml) {
+    // 2. Actions Required (escalations) — only if any exist
+    const escs = out.escalations || [];
+    if (escs.length > 0) {
+      const sortedEscs = [...escs].sort((a, b) => (b.blocking ? 1 : 0) - (a.blocking ? 1 : 0));
+      html += renderActionsRequiredHtml(sortedEscs);
+    }
+
+    // 3. Current Choice
+    html += `<section>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Current Choice</div>
+      ${renderCurrentChoiceHtml(out)}
+    </section>`;
+
+    // 4. Supplier Comparison — always visible
+    const ranked = getActiveRankedOutput(out);
+    html += `<section>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Comparison</div>
+      ${renderRankingTable(ranked?.ui_ranked_shortlist || [])}
+    </section>`;
+
+    // 5. Supplier Preference (if applicable)
+    const prefHtml = renderSupplierPreferenceHtml(out);
+    if (prefHtml) {
       html += `<section>
-        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Alternatives</div>
-        ${altHtml}
+        <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Supplier Preference</div>
+        ${prefHtml}
       </section>`;
     }
 
-    // 6. Excluded suppliers (collapsed by default)
-    const exclHtml = renderExcludedVisual(out);
+    // 6. Alternative Suppliers (expandable)
+    const altHtml = renderAlternativeCardsHtml(out);
+    if (altHtml) {
+      const altCount = (ranked?.ui_ranked_shortlist || []).length - 1;
+      html += `<section>
+        <details>
+          <summary class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 cursor-pointer select-none flex items-center gap-1.5 list-none">
+            <svg class="w-3.5 h-3.5 transition-transform duration-200 details-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            Alternative Suppliers${altCount > 0 ? ` (${altCount})` : ''}
+          </summary>
+          ${altHtml}
+        </details>
+      </section>`;
+    }
+
+    // 7. Excluded Suppliers (expandable)
+    const exclHtml = renderExcludedCardsHtml(out);
     if (exclHtml) {
       const exclCount = (out.suppliers_excluded || []).length;
       html += `<section>
@@ -1732,78 +1710,28 @@
     panel.innerHTML = html;
   }
 
-  function buildStatusBannerHtml(rec) {
-    if (!rec) return '';
-    const status = rec.status;
-    const canProceed = status === 'can_proceed' || status === 'proceed';
-    const withConditions = status === 'proceed_with_conditions';
-
-    if (canProceed) {
-      return `<div class="rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm bg-green-50 border border-green-200">
-        <span class="text-2xl">✅</span>
-        <div>
-          <div class="font-bold text-base text-green-800">Can Proceed</div>
-          <div class="text-sm text-green-700 mt-0.5">${escapeHtml(rec.reason || '')}</div>
-        </div>
-      </div>`;
-    }
-
-    if (withConditions) {
-      return `<div class="rounded-lg px-4 py-2.5 flex items-center gap-2.5 bg-amber-50 border border-amber-200">
-        <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0"></span>
-        <span class="text-sm font-semibold text-amber-800">Conditions Apply</span>
-        <span class="text-xs text-amber-600 ml-1">— see escalations below</span>
-      </div>`;
-    }
-
-    return `<div class="rounded-lg px-4 py-2.5 flex items-center gap-2.5 bg-red-50 border border-red-200">
-      <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-600 flex-shrink-0"></span>
-      <span class="text-sm font-semibold text-red-800">Blocked</span>
-      <span class="text-xs text-red-600 ml-1">— resolve escalations below</span>
-    </div>`;
-  }
-
-  function buildRequestDetailsHtml(req, out) {
-    const interp = out.request_interpretation || {};
-    const supplierConstraint = interp.supplier_must_use
-      ? 'Must use named supplier only'
-      : 'Preference only';
-    const fields = [
-      ['Request ID',      out.request_id],
-      ['Category',        `${interp.category_l1 || req.category_l1 || '—'} › ${interp.category_l2 || req.category_l2 || '—'}`],
-      ['Quantity',        `${fmtInt(interp.quantity || req.quantity)} ${interp.unit_of_measure || req.unit_of_measure || ''}`],
-      ['Budget',          `€ ${fmt(interp.budget_amount || req.budget_amount)}`],
-      ['Delivery by',     interp.required_by_date || req.required_by_date || '—'],
-      ['Country',         interp.delivery_country || (req.delivery_countries || []).join(', ') || '—'],
-      ['Pref. supplier',  interp.preferred_supplier_stated || req.preferred_supplier_mentioned || '—'],
-      ['Supplier rule',   supplierConstraint],
-      ['Incumbent',       interp.incumbent_supplier || req.incumbent_supplier || '—'],
-    ];
-    return `<section>
-      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Request Details</div>
-      <dl class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-        ${fields.map(([k, v]) => `<div class="contents"><dt class="text-gray-400 font-medium">${k}</dt><dd class="text-gray-800 font-semibold">${v}</dd></div>`).join('')}
-      </dl>
-    </section>`;
-  }
-
-  function renderEscalationsPanelHtml(escs) {
+  function renderActionsRequiredHtml(escs) {
     if (!escs || escs.length === 0) return '';
     return `<section>
-      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Escalations</div>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Actions Required</div>
       <div class="grid gap-3">
-        ${escs.map(e => `<div class="rounded-2xl border p-4 ${e.blocking ? 'border-red-200 bg-red-50/70' : 'border-yellow-200 bg-yellow-50/70'}">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded-full px-2 py-0.5 text-[11px] font-bold ${e.blocking ? 'bg-red-600 text-white' : 'bg-yellow-500 text-white'}">${e.blocking ? 'BLOCKING' : 'INFO'}</span>
-            <span class="text-xs font-semibold text-gray-500">${escapeHtml(e.rule || e.escalation_id)}</span>
-            <span class="text-sm font-semibold text-gray-900">${escapeHtml(e.escalation_id)}</span>
-          </div>
-          <p class="mt-2 text-sm leading-relaxed text-gray-700">${escapeHtml(e.trigger)}</p>
-          <div class="mt-3 flex flex-wrap gap-2 text-xs">
-            <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Owner: ${escapeHtml(e.escalate_to || '—')}</span>
-            <span class="rounded-full bg-white px-2.5 py-1 font-semibold text-gray-700 border border-gray-200">Rule: ${escapeHtml(e.rule || '—')}</span>
-          </div>
-        </div>`).join('')}
+        ${escs.map(e => {
+          const title = ESCALATION_TITLES[e.rule] || e.trigger || 'Action Needed';
+          const help = ESCALATION_HELP[e.rule] || '';
+          const barColor = e.blocking ? 'border-red-500' : 'border-gray-300';
+          const badgeClass = e.blocking
+            ? 'bg-red-100 text-red-700'
+            : 'bg-gray-100 text-gray-600';
+          const badgeText = e.blocking ? 'Required' : 'Optional';
+          return `<div class="border-l-4 ${barColor} rounded-r-xl bg-white p-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-bold text-gray-900">${escapeHtml(title)}</span>
+              <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${badgeClass}">${badgeText}</span>
+            </div>
+            <p class="mt-1 text-sm leading-relaxed text-gray-700">${escapeHtml(e.trigger)}</p>
+            ${help ? `<p class="mt-1 text-xs text-gray-500">${escapeHtml(help)}</p>` : ''}
+          </div>`;
+        }).join('')}
       </div>
     </section>`;
   }
@@ -2154,7 +2082,6 @@
     isResultsChat = false;
     currentSupplierShortlist = [];
     activeRankingMetric = 'overall';
-    isRankingPanelOpen = false;
     explicitShipSupplierName = null;
     isDashboardVisible = false;
     loadedOutput = null;

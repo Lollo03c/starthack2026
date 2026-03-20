@@ -984,6 +984,8 @@ def _format_scored(s: ScoredSupplier, rank: int, fx_info: dict | None = None) ->
         "score_breakdown": s.score_breakdown,
         "fit_rationale": s.fit_rationale,
         "recommendation_note": _recommendation_note(s),
+        "service_regions": sorted(s.supplier_row.service_regions),
+        "capacity_per_month": s.supplier_row.capacity_per_month,
     }
     # Add indicative FX-converted total when currencies differ
     if fx_info and tier.currency != fx_info["request_currency"]:
