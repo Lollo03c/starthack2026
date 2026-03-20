@@ -155,6 +155,7 @@ The explanation should cover: system design overview, clear reasoning logic, how
 | File | Role |
 |------|------|
 | `app.py` | FastAPI server — all endpoints |
+| `client_simulator.py` | `simulate_client_response(escalation_rule, trigger, request_json, output_json)` — Groq-based client response simulation for "Ask the Client" escalation buttons |
 | `results_chat.py` | `run_results_chat(messages, output_json, request_json)` — presents sourcing results in chat, handles Q&A + inline escalation resolution |
 | `chatbot.py` | `run_chat_turn(messages, request_json, issues, original_request_text, field_provenance, supplier_shortlist)` — validation + escalation resolution chat |
 | `explainer.py` | `explain_decision(output_json)` — LLM markdown explanation (legacy — unused in chat-first flow) |
@@ -177,20 +178,49 @@ The explanation should cover: system design overview, clear reasoning logic, how
 | `POST` | `/explain` | `{ output_json, request_text? }` → `{ explanation }` via Groq LLM (legacy — unused in chat-first flow) |
 | `POST` | `/validate` | `{ request_json, original_request_text? }` → `{ valid, issues }` |
 | `POST` | `/chat` | `{ messages, request_json, issues, original_request_text?, field_provenance?, supplier_shortlist? }` → `{ reply, updated_request_json, updated_field_provenance, remaining_issues, resolved }` |
+| `POST` | `/simulate-client` | `{ escalation_rule, escalation_trigger, request_json, output_json }` → `{ message, field_updates }` — simulates cooperative client response for escalation resolution |
+| `POST` | `/simulate-client-validation` | `{ field, question, request_json }` → `{ message, field_updates }` — simulates client providing a missing field value during validation |
 | `POST` | `/results-chat` | `{ messages, output_json, request_json }` → `{ messages: [...], updated_request_json, has_field_updates }` — presents results in chat, handles Q&A + escalation resolution |
 
-### UI Flow (Single-Window Chat + Dashboard Toggle)
-1. Initial state: full-viewport centered hero (brand, headline, subtext) with chat input bar below hero in normal document flow
+### Procurement Professional Framing
+- The user is a **procurement professional** processing a client's purchase request — NOT the person making the purchase
+- All copy, prompts, and LLM system instructions reflect this: "Paste a purchase request", "PO issued to", "Ask the Client", etc.
+- `results_chat.py` and `chatbot.py` system prompts explicitly state the user is the procurement agent, not the requester
+- Forward button reads "Approve & Create PO →", success screen reads "Purchase Order Created"
+
+### UI Flow (Single-Window Chat + Sidebar + Dashboard Toggle)
+1. Initial state: sidebar (260px left column, always visible) + full-viewport centered hero (brand, headline, subtext) with chat input bar below hero in normal document flow
 2. Submit (Enter or arrow button) → hero fades out (CSS transition), user message shows as chat bubble, typing indicator appears. Top bar is always visible (ChatGPT-style: "New chat" icon+text on left, "ChainIQ Sourcing" title on right)
 3. Pipeline: `POST /parse` → `POST /validate` → (if invalid: clarification appears in same chat — no phase switch) → auto-proceed when resolved → `POST /process` → `POST /results-chat`
 4. **Results in chat**: LLM summary messages appear as chat bubbles + **"Open Dashboard"** button + suggestion chips + forward button
-5. **Dashboard panel** (`#dashboard-panel`): toggleable left panel titled "Request Summary" with structured output (actions required, current choice, supplier comparison table, supplier preference, alternatives, excluded). No status banner. Toggled via "Open Dashboard" button in chat or "Show/Hide Dashboard" button in top bar
-6. After escalation resolution via chat, silent `/process` recheck updates dashboard content via `refreshOutputPanel()`
-7. "New chat" button in top bar calls `resetToInitial()` — hides dashboard, clears messages, fades hero back in
+5. **Dashboard panel** (`#dashboard-panel`): toggleable left panel titled "Request Summary" with structured output (actions required with action buttons, current choice, supplier comparison table, supplier preference, alternatives, excluded). No status banner. Toggled via "Open Dashboard" button in chat or "Show/Hide Dashboard" button in top bar
+6. After escalation resolution via chat or action buttons, silent `/process` recheck updates dashboard content via `refreshOutputPanel()`
+7. "New chat" button in top bar calls `createNewConversation()` — auto-saves current state, resets UI, creates new conversation ID
 8. Dev panel (bottom-right corner, only visible at `?dev=true`): three buttons open dark modals — Parsed JSON, Output JSON, Provenance / Notes
-9. Responsive: below 1024px, dashboard becomes full-screen overlay (fixed, z-30) instead of side panel
+9. Responsive: below 1024px, dashboard becomes full-screen overlay (fixed, z-30) instead of side panel, sidebar hidden
 10. **Single container architecture**: one `#messages` div, one `#chat-input` bar, one set of event listeners — no message migration between containers
 11. Old results page (`result-phase`) code remains but is unused in current flow
+
+### Chat History Sidebar
+- **`#sidebar`**: 260px fixed-width left column, always visible on desktop, hidden on mobile (<1024px)
+- **localStorage persistence**: conversations stored in `localStorage('cq_conversations')` as JSON array
+- **Conversation data model**: `{ id, title, status, created_at, updated_at, messages, requestJson, outputJson, fieldProvenance, inferenceNotes, originalRequestText, explicitShipSupplierName, activeRankingMetric, isResultsChat, currentSupplierShortlist }`
+- **`status`**: `"active"` or `"completed"` (set to completed on PO creation via `showForwardScreen()`)
+- **`title`**: first 60 chars of `originalRequestText`, fallback "New Request"
+- **Key functions**: `saveConversation(conv)`, `loadConversations()`, `deleteConversation(id)`, `autoSaveCurrentState()`, `renderSidebar()`, `loadConversation(id)`, `createNewConversation()`
+- **Auto-save triggers**: after parse, validate, process, chat turn, results-chat turn, escalation resolution (client sim or internal approval), PO creation
+- **Cap**: 50 conversations max, oldest completed pruned first
+- **Loading a completed conversation**: input is disabled, placeholder says "This request has been completed."
+
+### Escalation Action Buttons
+- **Client escalations** (`CLIENT_ESCALATIONS` set: ER-001, ER-009, ER-010, ER-011): "Ask the Client" button (blue outline) → calls `POST /simulate-client` → shows client response in distinct bubble style (light blue bg, "Client" label, person icon) → merges field_updates → silent reprocess
+- **Internal escalations** (`INTERNAL_ESCALATIONS` map: ER-002 through ER-008): "Request Approval from [Role]" button (gray outline) → simulated delay (1.5-2.5s) → green approval notification pill → sets escalation_overrides → silent reprocess
+- **`client_simulator.py`**: Groq `qwen/qwen3-32b`, `/no_think`, `temperature=0.3`, `max_tokens=500`. System prompt simulates cooperative stakeholder. Per-rule hints guide LLM responses.
+- **First message is client-styled** — the initial purchase request appears as a centered `msg-client` bubble (light blue, "Client" label) rather than a right-aligned user bubble. Input bar starts with `.client-input` class (blue border, light blue bg, "Client" tag). After submit, input bar reverts to normal white styling.
+- **Validation missing fields via "Ask the Client"** — when `/validate` returns missing required fields, the AI shows each question with an "Ask the Client" button. Clicking calls `POST /simulate-client-validation` → client response appears in `msg-client` bubble → field_updates merged → next question shown or auto-proceed to `/process`. Manual typing fallback still works via existing `/chat` flow.
+- **`client_simulator.py` `simulate_client_field_response()`** — new function for validation field collection. Per-field hints for quantity, category_l1, category_l2, delivery_countries. Same Groq client/model as escalation simulator.
+- **New message types**: `msg-client` (light blue bg, blue left border, "Client" label), `msg-system-notification` (centered pill, neutral=gray or success=green)
+- **`ESCALATION_OVERRIDE_KEYS`** map: mirrors `results_chat.py` override key mapping for internal approval resolution
 
 ### Key Implementation Decisions & Constraints
 
@@ -241,9 +271,8 @@ The explanation should cover: system design overview, clear reasoning logic, how
 - **`ship_supplier_selection`** — `results_chat.py` `_apply_resolution_heuristics()` returns a third value `ship_supplier_selection` dict when the user explicitly asks to switch supplier. Frontend stores `ship_supplier_selection.supplier_name` in `explicitShipSupplierName`.
 
 ### What Still Needs to Be Built
-1. **Prompt suggestions** — clickable suggestion chips after initial results presentation (e.g. "Show alternatives", "Why was X excluded?")
-3. **Historical context** — optionally use `historical_awards.csv` to inform rankings
-4. **Stretch goals** — confidence scoring, ESG weighting, PDF export, approval routing
+1. **Historical context** — optionally use `historical_awards.csv` to inform rankings
+2. **Stretch goals** — confidence scoring, ESG weighting, PDF export, approval routing
 
 ### Commit Conventions
 - Never include "Co-Authored-By: Claude" or any AI authorship in commit messages

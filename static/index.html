@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ChainIQ · Sourcing Intelligence</title>
+  <title>CupidIQ · Sourcing Intelligence</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
@@ -117,6 +117,30 @@
       padding: 0.5rem 0.75rem;
     }
 
+    /* ── Client-styled input bar ──────────────────────────────── */
+    #chat-input-bar { position: relative; }
+    #chat-input-bar.client-input .input-pill {
+      background: #eff6ff;
+      border: 2px solid #60a5fa;
+    }
+    #client-input-tag {
+      display: none;
+      position: absolute;
+      top: -10px;
+      left: 24px;
+      background: white;
+      border: 1px solid #bfdbfe;
+      border-radius: 9999px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #3b82f6;
+      z-index: 11;
+      align-items: center;
+      gap: 3px;
+    }
+    #chat-input-bar.client-input #client-input-tag { display: flex; }
+
     /* ── Dashboard panel ──────────────────────────────────────── */
     @keyframes panelFadeIn {
       from { opacity: 0; transform: translateY(8px); }
@@ -141,7 +165,7 @@
       min-width: 0 !important;
       padding: 0 !important;
       overflow: hidden;
-      border-right: none !important;
+      border-left: none !important;
       transition: width 0.4s ease, padding 0.4s ease, min-width 0.4s ease;
     }
     .dashboard-visible {
@@ -178,7 +202,7 @@
     /* Dashboard reopen tab */
     #dashboard-reopen-btn {
       position: fixed;
-      left: 12px;
+      right: 12px;
       top: 50%;
       transform: translateY(-50%);
       width: 36px;
@@ -205,11 +229,62 @@
     /* Disable transitions during drag */
     .no-transition { transition: none !important; }
 
+    /* ── Sidebar ──────────────────────────────────────────────── */
+    #sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: #f9fafb;
+      border-right: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-card {
+      padding: 0.625rem 0.75rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      position: relative;
+    }
+    .sidebar-card:hover { background: #f3f4f6; }
+    .sidebar-card.active { background: #eff6ff; }
+    .sidebar-card .delete-btn {
+      display: none;
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .sidebar-card:hover .delete-btn { display: flex; }
+
+    /* Client message bubble */
+    .msg-client {
+      max-width: 82%;
+      background: #eff6ff;
+      border-left: 4px solid #60a5fa;
+      border-radius: 0.5rem;
+      padding: 0.625rem 1rem;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: #1a1a1a;
+    }
+
+    /* System notification pill */
+    .msg-system-notification {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.375rem 1rem;
+      border-radius: 9999px;
+      color: #374151;
+    }
+    .msg-system-notification.neutral { background: #f3f4f6; }
+    .msg-system-notification.success { background: #dcfce7; color: #166534; }
+
     @media (max-width: 1023px) {
       .dashboard-visible {
         position: fixed;
         inset: 0;
-        top: 49px; /* below top bar */
+        top: 0;
         width: 100% !important;
         min-width: 100% !important;
         z-index: 30;
@@ -217,6 +292,7 @@
       }
       #resize-handle { display: none !important; }
       #dashboard-reopen-btn { display: none !important; }
+      #sidebar { display: none; }
     }
   </style>
 </head>
@@ -227,25 +303,19 @@
 ══════════════════════════════════════════════════════════════ -->
 <div id="app" class="h-screen flex flex-col">
 
-  <!-- Top bar (always visible, ChatGPT-style) -->
-  <div id="top-bar" class="sticky top-0 z-20 bg-white px-4 py-2.5 flex items-center justify-between shrink-0">
-    <button id="btn-new-request" class="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition rounded-lg px-2 py-1.5 hover:bg-gray-100" onclick="resetToInitial()">
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-      </svg>
-      <span class="text-sm font-medium">New chat</span>
-    </button>
-    <span class="text-sm font-semibold text-gray-800">ChainIQ Sourcing</span>
-  </div>
-
   <!-- Main content area -->
   <div id="main-content" class="flex flex-1 overflow-hidden">
 
-    <!-- Dashboard panel (hidden initially, slides in on toggle) -->
-    <div id="dashboard-panel" class="dashboard-hidden p-6 space-y-6 bg-gray-50"></div>
-
-    <!-- Resize handle -->
-    <div id="resize-handle"></div>
+    <!-- Sidebar: conversation history -->
+    <div id="sidebar">
+      <div class="p-3 flex items-center justify-between border-b border-gray-200">
+        <span class="text-xs font-semibold text-gray-500 uppercase tracking-widest">Requests</span>
+        <button onclick="createNewConversation()" class="text-gray-400 hover:text-gray-700 transition" title="New request">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div id="sidebar-list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
+    </div>
 
     <!-- Chat area -->
     <div id="chat-area" class="flex-1 flex flex-col min-w-0">
@@ -255,20 +325,20 @@
         <!-- Brand -->
         <div class="flex items-center gap-2 mb-10 select-none">
           <div class="w-9 h-9 bg-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow">CQ</div>
-          <span class="text-gray-500 font-medium text-base tracking-tight">ChainIQ · Sourcing Intelligence</span>
+          <span class="text-gray-500 font-medium text-base tracking-tight">CupidIQ · Sourcing Intelligence</span>
         </div>
 
         <!-- Headline -->
         <h1 class="text-3xl font-bold text-gray-900 text-center mb-2 leading-tight max-w-xl">
-          Describe your procurement need
+          Start a sourcing decision
         </h1>
         <p class="text-gray-500 text-center mb-8 max-w-md leading-relaxed">
-          Tell us what you need to purchase — our AI will analyse suppliers, policies, and pricing.
+          Drop in a purchase request — we'll validate it, match suppliers, enforce policy, and deliver an audit-ready recommendation.
         </p>
       </div>
 
       <!-- Messages container (hidden until first message) -->
-      <div id="messages" class="hidden flex-1 overflow-y-auto px-4 py-6 pb-24 max-w-2xl mx-auto w-full space-y-3"></div>
+      <div id="messages" class="hidden flex-1 overflow-y-auto px-4 py-6 pb-32 max-w-2xl mx-auto w-full space-y-3"></div>
 
       <!-- Policy recheck indicator -->
       <div id="recheck-indicator" class="hidden text-center py-1 shrink-0">
@@ -276,12 +346,13 @@
       </div>
 
       <!-- Input bar (always present) -->
-      <div id="chat-input-bar">
+      <div id="chat-input-bar" class="client-input">
+        <div id="client-input-tag"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Client</div>
         <div class="input-pill flex items-end gap-3">
           <textarea
             id="chat-input"
             class="flex-1 bg-transparent border-none outline-none text-gray-800 placeholder-gray-400 text-sm leading-relaxed px-3 py-2"
-            placeholder="e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k"
+            placeholder="Client's purchase request..."
             rows="2"
           ></textarea>
           <button id="chat-send-btn"
@@ -294,12 +365,18 @@
         </div>
       </div>
     </div>
+
+    <!-- Resize handle -->
+    <div id="resize-handle"></div>
+
+    <!-- Dashboard panel (hidden initially, slides in on toggle) -->
+    <div id="dashboard-panel" class="dashboard-hidden p-6 space-y-6 bg-gray-50"></div>
   </div>
 
   <!-- Reopen dashboard tab (left edge, visible when dashboard collapsed after first open) -->
   <button id="dashboard-reopen-btn" class="hidden" onclick="openDashboardFromReopen()" title="Open Dashboard">
     <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="9 18 15 12 9 6"/>
+      <polyline points="15 18 9 12 15 6"/>
     </svg>
   </button>
 </div>
@@ -319,7 +396,7 @@
 ══════════════════════════════════════════════════════════════ -->
 <div id="forward-phase" class="hidden fixed inset-0 bg-white flex flex-col items-center justify-center gap-6 z-50">
   <div class="text-green-500 text-6xl">✓</div>
-  <h2 class="text-2xl font-semibold text-gray-800">Request forwarded successfully!</h2>
+  <h2 class="text-2xl font-semibold text-gray-800">Purchase Order Created</h2>
   <p class="text-gray-500 text-sm" id="forward-supplier-name"></p>
   <button onclick="resetToInitial()" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">← New Request</button>
 </div>
@@ -331,7 +408,7 @@
   <div class="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-gray-200 px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-2">
       <div class="w-7 h-7 bg-blue-700 rounded-md flex items-center justify-center text-white font-bold text-xs">CQ</div>
-      <span class="text-gray-600 font-medium text-sm">ChainIQ · Sourcing Intelligence</span>
+      <span class="text-gray-600 font-medium text-sm">CupidIQ · Sourcing Intelligence</span>
     </div>
     <button id="btn-new-request-legacy" onclick="resetToInitial()"
       class="text-xs text-blue-700 hover:text-blue-900 font-semibold border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition">
@@ -435,6 +512,7 @@
   let dashboardUnlocked = false; // true once "Open Dashboard" button has been shown in chat
   let activeRankingMetric = 'overall';
   let explicitShipSupplierName = null;
+  let isFirstMessage = true;
 
   const RANKING_METRICS = {
     overall: {
@@ -651,8 +729,9 @@
     const hero = $('hero-content');
     hero.classList.add('hero-fade-out');
 
-    // Slide input bar to bottom
+    // Slide input bar to bottom, remove client styling
     $('chat-input-bar').classList.add('chat-mode');
+    $('chat-input-bar').classList.remove('client-input');
 
     // Show top bar and messages after hero fades
     setTimeout(() => {
@@ -736,6 +815,7 @@
         if (!data.has_field_updates) {
           checkAndShowForwardButton(devData.output);
           renderSuggestionChips(loadedOutput);
+          autoSaveCurrentState();
         }
 
         // Handle field updates (escalation resolution in results chat)
@@ -779,6 +859,7 @@
           finally {
             getActiveRecheckIndicator().classList.add('hidden');
           }
+          autoSaveCurrentState();
         }
 
         setTimeout(() => getActiveInput().focus(), 100);
@@ -823,6 +904,12 @@
       if (data.reply) {
         appendMessage('assistant', data.reply);
         conversationMessages.push({ role: 'assistant', content: data.reply });
+      }
+      autoSaveCurrentState();
+
+      // If not resolved and not in refinement mode, show next Ask the Client button
+      if (!data.resolved && !isRefinementAfterOutput && currentIssues.length > 0) {
+        appendAskClientValidation(currentIssues[0]);
       }
 
       // Auto-proceed when resolved — no submit button needed
@@ -963,6 +1050,7 @@
       isRefinementAfterOutput = false;
       conversationResolved = false;
       syncActiveShortlist();
+      autoSaveCurrentState();
       setTimeout(() => getActiveInput().focus(), 100);
 
     } catch (e) {
@@ -1052,7 +1140,7 @@
       const dx = clientX - startX;
       const containerWidth = container.getBoundingClientRect().width;
       const maxWidth = containerWidth - 8 - 300; // 8px handle + 300px min chat
-      const newWidth = Math.max(0, Math.min(startWidth + dx, maxWidth));
+      const newWidth = Math.max(0, Math.min(startWidth - dx, maxWidth));
       panel.style.width = newWidth + 'px';
     }
 
@@ -1621,7 +1709,7 @@
         <button id="forward-action-btn"
           onclick="showForwardScreen('${supplierName.replace(/'/g, "\\'")}')"
           class="px-5 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 transition shadow-sm text-sm">
-          Ship with ${supplierName} →
+          Approve & Create PO →
         </button>`;
       container.appendChild(wrapper);
       container.scrollTop = container.scrollHeight;
@@ -1631,8 +1719,20 @@
   function showForwardScreen(supplierName) {
     $('forward-phase').classList.remove('hidden');
     if (supplierName) {
-      $('forward-supplier-name').textContent = `Forwarded to: ${supplierName}`;
+      $('forward-supplier-name').textContent = `PO issued to: ${supplierName}`;
     }
+    // Mark conversation as completed
+    if (currentConversationId) {
+      const list = loadConversations();
+      const conv = list.find(c => c.id === currentConversationId);
+      if (conv) {
+        conv.status = 'completed';
+        conv.updated_at = new Date().toISOString();
+        saveConversationsList(list);
+        renderSidebar();
+      }
+    }
+    autoSaveCurrentState();
   }
 
   // ── Dashboard panel rendering ─────────────────────────────────────────────
@@ -1723,6 +1823,24 @@
             ? 'bg-red-100 text-red-700'
             : 'bg-gray-100 text-gray-600';
           const badgeText = e.blocking ? 'Required' : 'Optional';
+
+          // Action button
+          let actionBtn = '';
+          if (CLIENT_ESCALATIONS.has(e.rule)) {
+            actionBtn = `<button data-ask-client="${e.rule}" onclick="askClient('${e.rule}')"
+              class="mt-3 px-4 py-2 text-xs font-semibold rounded-lg border-2 border-blue-400 text-blue-600 hover:bg-blue-50 transition flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Ask the Client
+            </button>`;
+          } else if (INTERNAL_ESCALATIONS[e.rule]) {
+            const approver = INTERNAL_ESCALATIONS[e.rule];
+            actionBtn = `<button data-request-approval="${e.rule}" onclick="requestApproval('${e.rule}')"
+              class="mt-3 px-4 py-2 text-xs font-semibold rounded-lg border-2 border-gray-300 text-gray-600 hover:bg-gray-50 transition flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              Request Approval from ${escapeHtml(approver.role)}
+            </button>`;
+          }
+
           return `<div class="border-l-4 ${barColor} rounded-r-xl bg-white p-4">
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-sm font-bold text-gray-900">${escapeHtml(title)}</span>
@@ -1730,6 +1848,7 @@
             </div>
             <p class="mt-1 text-sm leading-relaxed text-gray-700">${escapeHtml(e.trigger)}</p>
             ${help ? `<p class="mt-1 text-xs text-gray-500">${escapeHtml(help)}</p>` : ''}
+            ${actionBtn}
           </div>`;
         }).join('')}
       </div>
@@ -1921,9 +2040,10 @@
 
     resetResults();
 
-    // 2. Show user message and typing indicator
-    appendMessage('user', text);
-    conversationMessages = [{ role: 'user', content: text }];
+    // 2. Show user message (client-centered for first message) and typing indicator
+    appendMessageClientCentered(text);
+    conversationMessages = [{ role: 'user', content: text, clientMessage: true }];
+    isFirstMessage = false;
     showTypingIndicator();
 
     try {
@@ -1957,17 +2077,25 @@
       if (valid) {
         // Happy path — go straight to processing (typing indicator already showing)
         currentRequestJson = request_json;
+        autoSaveCurrentState();
         await proceedToProcess(request_json, text);
       } else {
-        // Show clarification in chat (no phase switch)
+        // Show clarification via Ask the Client buttons
         hideTypingIndicator();
         currentRequestJson = request_json;
         currentIssues = issues;
         conversationResolved = false;
 
-        const openingMessage = buildOpeningMessage(issues);
-        appendMessage('assistant', openingMessage);
-        conversationMessages.push({ role: 'assistant', content: openingMessage });
+        const count = issues.length;
+        const introMsg = count === 1
+          ? "There's one missing detail we need from the client before proceeding."
+          : `There are ${count} missing details we need from the client before proceeding — let's go one at a time.`;
+        appendMessage('assistant', introMsg);
+        conversationMessages.push({ role: 'assistant', content: introMsg });
+
+        // Show first Ask the Client button
+        appendAskClientValidation(issues[0]);
+        autoSaveCurrentState();
         setTimeout(() => getActiveInput().focus(), 100);
       }
 
@@ -2049,13 +2177,208 @@
 
   // ── Reset to initial state ────────────────────────────────────────────────
   function resetToInitial() {
-    // Hide forward screen
+    // Auto-save current state before resetting
+    if (currentConversationId && conversationMessages.length > 0) {
+      autoSaveCurrentState();
+    }
+    createNewConversation();
+  }
+
+  // ── Chat History (localStorage) ────────────────────────────────────────────
+  let currentConversationId = null;
+
+  function generateId() { return 'conv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8); }
+
+  function loadConversations() {
+    try {
+      const raw = localStorage.getItem('cq_conversations');
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  function saveConversationsList(list) {
+    // Cap at 50, prune oldest completed
+    if (list.length > 50) {
+      list.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+      const active = list.filter(c => c.status === 'active');
+      const completed = list.filter(c => c.status === 'completed');
+      while (active.length + completed.length > 50 && completed.length > 0) {
+        completed.pop();
+      }
+      list = [...active, ...completed];
+    }
+    localStorage.setItem('cq_conversations', JSON.stringify(list));
+  }
+
+  function saveConversation(conv) {
+    const list = loadConversations();
+    const idx = list.findIndex(c => c.id === conv.id);
+    if (idx >= 0) list[idx] = conv;
+    else list.unshift(conv);
+    saveConversationsList(list);
+  }
+
+  function deleteConversation(id) {
+    const list = loadConversations().filter(c => c.id !== id);
+    saveConversationsList(list);
+    if (currentConversationId === id) {
+      currentConversationId = null;
+      resetToInitialInternal();
+    }
+    renderSidebar();
+  }
+
+  function autoSaveCurrentState() {
+    if (!currentConversationId) {
+      currentConversationId = generateId();
+    }
+    const existing = loadConversations().find(c => c.id === currentConversationId);
+    const conv = {
+      id: currentConversationId,
+      title: (originalRequestText || '').slice(0, 60) || 'New Request',
+      status: (existing && existing.status) || 'active',
+      created_at: existing ? existing.created_at : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      messages: conversationMessages,
+      requestJson: currentRequestJson,
+      outputJson: loadedOutput,
+      fieldProvenance: currentFieldProvenance,
+      inferenceNotes: devData.provenance ? devData.provenance.inference_notes : null,
+      originalRequestText: originalRequestText,
+      explicitShipSupplierName: explicitShipSupplierName,
+      activeRankingMetric: activeRankingMetric,
+      isResultsChat: isResultsChat,
+      currentSupplierShortlist: currentSupplierShortlist,
+    };
+    saveConversation(conv);
+    renderSidebar();
+  }
+
+  function relativeTime(dateStr) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.floor(hrs / 24);
+    return days + 'd ago';
+  }
+
+  function renderSidebar() {
+    const list = loadConversations().sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    const container = $('sidebar-list');
+    if (!container) return;
+
+    container.innerHTML = list.map(c => {
+      const isActive = c.id === currentConversationId;
+      const statusDot = c.status === 'completed'
+        ? '<span class="w-2 h-2 rounded-full bg-green-400 shrink-0"></span>'
+        : '<span class="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>';
+      return `<div class="sidebar-card${isActive ? ' active' : ''}" onclick="loadConversation('${c.id}')">
+        <div class="flex items-center gap-2">
+          ${statusDot}
+          <span class="text-sm text-gray-800 truncate flex-1 font-medium">${escapeHtml(c.title)}</span>
+        </div>
+        <div class="text-[11px] text-gray-400 mt-0.5 pl-4">${relativeTime(c.updated_at)}</div>
+        <button class="delete-btn items-center justify-center w-5 h-5 rounded hover:bg-red-100 text-gray-400 hover:text-red-500 transition"
+          onclick="event.stopPropagation(); deleteConversation('${c.id}')" title="Delete">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`;
+    }).join('');
+  }
+
+  function loadConversation(id) {
+    // Auto-save current first
+    if (currentConversationId && conversationMessages.length > 0) {
+      autoSaveCurrentState();
+    }
+
+    const conv = loadConversations().find(c => c.id === id);
+    if (!conv) return;
+
+    currentConversationId = id;
+
+    // Restore state
+    conversationMessages = conv.messages || [];
+    currentRequestJson = conv.requestJson;
+    loadedOutput = conv.outputJson;
+    currentFieldProvenance = conv.fieldProvenance;
+    originalRequestText = conv.originalRequestText || '';
+    explicitShipSupplierName = conv.explicitShipSupplierName || null;
+    activeRankingMetric = conv.activeRankingMetric || 'overall';
+    isResultsChat = conv.isResultsChat || false;
+    currentSupplierShortlist = conv.currentSupplierShortlist || [];
+
+    devData.parsed = currentRequestJson;
+    devData.output = loadedOutput;
+    devData.provenance = conv.fieldProvenance
+      ? { field_provenance: conv.fieldProvenance, inference_notes: conv.inferenceNotes }
+      : null;
+
+    // Reset UI
+    $('forward-phase').classList.add('hidden');
+    toggleDashboard(false);
+    $('dashboard-reopen-btn').classList.add('hidden');
+    dashboardUnlocked = false;
+    dashboardWidthPx = null;
+
+    // Rebuild messages
+    const hero = $('hero-content');
+    hero.classList.add('hidden', 'hero-fade-out');
+    $('chat-input-bar').classList.add('chat-mode');
+    const msgContainer = $('messages');
+    msgContainer.innerHTML = '';
+    msgContainer.classList.remove('hidden');
+
+    conversationMessages.forEach(m => {
+      if (m.role === 'user' && m.clientMessage) appendMessageClientCentered(m.content);
+      else if (m.role === 'user') appendMessage('user', m.content);
+      else if (m.role === 'client') appendMessageClient(m.content);
+      else if (m.role === 'system-notification') appendSystemNotification(m.content, m.style || 'neutral');
+      else appendMessage('assistant', m.content);
+    });
+
+    // Restore dashboard if output exists
+    if (loadedOutput) {
+      syncActiveShortlist();
+      refreshOutputPanel(loadedOutput, currentRequestJson);
+      dashboardReady = true;
+    }
+
+    // If completed, dim input
+    if (conv.status === 'completed') {
+      $('chat-input').disabled = true;
+      $('chat-send-btn').disabled = true;
+      $('chat-input').placeholder = 'This request has been completed.';
+    } else {
+      $('chat-input').disabled = false;
+      $('chat-send-btn').disabled = false;
+      $('chat-input').placeholder = 'Reply…';
+    }
+
+    renderSidebar();
+    setTimeout(() => $('chat-input').focus(), 100);
+  }
+
+  function createNewConversation() {
+    // Auto-save current
+    if (currentConversationId && conversationMessages.length > 0) {
+      autoSaveCurrentState();
+    }
+    currentConversationId = generateId();
+    resetToInitialInternal();
+    renderSidebar();
+  }
+
+  // Internal reset without sidebar interaction
+  function resetToInitialInternal() {
     $('forward-phase').classList.add('hidden');
     $('forward-supplier-name').textContent = '';
     const fwdBtn = document.getElementById('forward-action-btn');
-    if (fwdBtn) fwdBtn.closest('.flex').remove();
+    if (fwdBtn) fwdBtn.closest('.flex')?.remove();
 
-    // Hide dashboard
     toggleDashboard(false);
     $('dashboard-panel').innerHTML = '';
     dashboardReady = false;
@@ -2064,14 +2387,10 @@
     dashboardUnlocked = false;
     $('resize-handle').style.display = 'none';
 
-    // Clear messages
     $('messages').innerHTML = '';
     $('messages').classList.add('hidden');
-
-    // Reset legacy result phase
     $('result-phase').classList.add('hidden');
 
-    // Reset state
     currentRequestJson = null;
     currentIssues = [];
     conversationMessages = [];
@@ -2089,7 +2408,6 @@
     devData.output = null;
     devData.provenance = null;
 
-    // Fade hero back in
     const hero = $('hero-content');
     hero.classList.remove('hidden', 'hero-fade-out');
     hero.style.opacity = '0';
@@ -2100,14 +2418,280 @@
       hero.style.transform = 'translateY(0)';
     });
 
-    // Reset input bar position
     $('chat-input-bar').classList.remove('chat-mode');
-
-    // Reset input
+    $('chat-input-bar').classList.add('client-input');
+    isFirstMessage = true;
     $('chat-input').value = '';
-    $('chat-input').placeholder = 'e.g. Need 500 laptops in 2 weeks, prefer Supplier X, budget 400k';
+    $('chat-input').disabled = false;
+    $('chat-send-btn').disabled = false;
+    $('chat-input').placeholder = 'Client\'s purchase request...';
     setTimeout(() => $('chat-input').focus(), 100);
   }
+
+  // ── Escalation action buttons ──────────────────────────────────────────────
+  const CLIENT_ESCALATIONS = new Set(['ER-001', 'ER-009', 'ER-010', 'ER-011']);
+
+  const INTERNAL_ESCALATIONS = {
+    'ER-002': { role: 'Procurement Manager', name: 'James Mitchell' },
+    'ER-003': { role: 'Head of Strategic Sourcing', name: 'Sarah Chen' },
+    'ER-004': { role: 'Head of Category', name: 'David Park' },
+    'ER-005': { role: 'Security & Compliance Lead', name: 'Maria Gonzalez' },
+    'ER-006': { role: 'Sourcing Excellence Lead', name: 'Thomas Weber' },
+    'ER-007': { role: 'Marketing Governance Lead', name: 'Lisa Anderson' },
+    'ER-008': { role: 'Regional Compliance Lead', name: 'Robert Kim' },
+  };
+
+  // Override key mapping (mirrors results_chat.py)
+  const ESCALATION_OVERRIDE_KEYS = {
+    'ER-002': 'restricted_supplier',
+    'ER-003': 'threshold_exceeded',
+    'ER-004': 'insufficient_quotes',
+    'ER-005': 'data_residency',
+    'ER-006': 'single_supplier_risk',
+    'ER-007': 'capacity_concern',
+    'ER-008': 'usd_compliance',
+  };
+
+  function appendMessageClient(content) {
+    const container = getActiveMessageContainer();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex justify-start para-animate';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-client';
+    bubble.innerHTML = '<div class="text-[11px] font-semibold text-blue-500 mb-1 flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Client</div>' + formatBubbleText(content);
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    return wrapper;
+  }
+
+  function appendMessageClientCentered(content) {
+    const container = getActiveMessageContainer();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex justify-center para-animate';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-client';
+    bubble.innerHTML = '<div class="text-[11px] font-semibold text-blue-500 mb-1 flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Client</div>' + formatBubbleText(content);
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    return wrapper;
+  }
+
+  function appendSystemNotification(content, style = 'neutral') {
+    const container = getActiveMessageContainer();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex justify-center para-animate my-2';
+    const pill = document.createElement('div');
+    pill.className = `msg-system-notification ${style}`;
+    pill.innerHTML = formatBubbleText(content);
+    wrapper.appendChild(pill);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    return wrapper;
+  }
+
+  function appendAskClientValidation(issue) {
+    const container = getActiveMessageContainer();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'flex justify-start para-animate';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-ai';
+    const questionText = issue.question_for_user || issue.description || `Please provide the missing ${issue.field || 'information'}.`;
+    const field = issue.field || '';
+    bubble.innerHTML = formatBubbleText(questionText) +
+      `<div class="mt-3"><button class="ask-client-validation-btn inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 rounded-full hover:bg-blue-50 transition" data-field="${escapeHtml(field)}" data-question="${escapeHtml(questionText)}"><svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Ask the Client</button></div>`;
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Event delegation for Ask the Client validation buttons
+  document.addEventListener('click', async e => {
+    const btn = e.target.closest('.ask-client-validation-btn');
+    if (!btn) return;
+
+    const field = btn.dataset.field;
+    const question = btn.dataset.question;
+
+    // Disable button, show spinner
+    btn.disabled = true;
+    btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full"></span> Contacting client...';
+
+    appendSystemNotification('Contacting client...', 'neutral');
+    conversationMessages.push({ role: 'system-notification', content: 'Contacting client...', style: 'neutral' });
+
+    try {
+      const res = await fetch('/simulate-client-validation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, question, request_json: currentRequestJson }),
+      });
+
+      if (!res.ok) throw new Error('Client simulation failed');
+      const data = await res.json();
+
+      // Small delay so it feels like a real contact
+      await sleep(1000);
+
+      // Remove the "Contacting client..." notification
+      const container = getActiveMessageContainer();
+      const lastNotif = container.querySelector('.msg-system-notification:last-of-type');
+      if (lastNotif) lastNotif.closest('.flex')?.remove();
+
+      // Show client response
+      appendMessageClient(data.message);
+      conversationMessages.push({ role: 'client', content: data.message });
+
+      // Merge field updates
+      if (data.field_updates && Object.keys(data.field_updates).length > 0) {
+        for (const [k, v] of Object.entries(data.field_updates)) {
+          currentRequestJson[k] = v;
+        }
+      }
+
+      // Remove resolved issue
+      currentIssues = currentIssues.filter(i => i.field !== field);
+
+      if (currentIssues.length > 0) {
+        // Show next question
+        const nextMsg = `Got it. ${currentIssues.length === 1 ? 'One more thing' : `${currentIssues.length} more details`} to clarify:`;
+        appendMessage('assistant', nextMsg);
+        conversationMessages.push({ role: 'assistant', content: nextMsg });
+        appendAskClientValidation(currentIssues[0]);
+      } else {
+        // All resolved — proceed to processing
+        appendMessage('assistant', 'We have everything we need from the client. Processing the request...');
+        conversationMessages.push({ role: 'assistant', content: 'We have everything we need from the client. Processing the request...' });
+        autoSaveCurrentState();
+        showTypingIndicator();
+        await proceedToProcess(currentRequestJson, originalRequestText);
+      }
+
+      autoSaveCurrentState();
+    } catch (err) {
+      console.error('Ask client validation error:', err);
+      appendSystemNotification('Failed to contact client. You can type a response manually.', 'neutral');
+    }
+  });
+
+  async function askClient(rule) {
+    const esc = (loadedOutput?.escalations || []).find(e => e.rule === rule);
+    if (!esc) return;
+
+    // Disable the button
+    const btn = document.querySelector(`[data-ask-client="${rule}"]`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full"></span> Contacting...'; }
+
+    appendSystemNotification('Contacting client...', 'neutral');
+    conversationMessages.push({ role: 'system-notification', content: 'Contacting client...', style: 'neutral' });
+
+    try {
+      const res = await fetch('/simulate-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          escalation_rule: rule,
+          escalation_trigger: esc.trigger,
+          request_json: currentRequestJson,
+          output_json: loadedOutput,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Client simulation failed');
+      const data = await res.json();
+
+      // Show client response
+      appendMessageClient(data.message);
+      conversationMessages.push({ role: 'client', content: data.message });
+
+      // Merge field updates
+      if (data.field_updates && Object.keys(data.field_updates).length > 0) {
+        for (const [k, v] of Object.entries(data.field_updates)) {
+          if (k === 'escalation_overrides') {
+            currentRequestJson.escalation_overrides = { ...(currentRequestJson.escalation_overrides || {}), ...v };
+          } else {
+            currentRequestJson[k] = v;
+          }
+        }
+      }
+
+      // Silent reprocess
+      getActiveRecheckIndicator().classList.remove('hidden');
+      const proc = await fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_json: currentRequestJson }),
+      });
+      if (proc.ok) {
+        const { output_json } = await proc.json();
+        loadedOutput = output_json;
+        devData.output = output_json;
+        devData.parsed = currentRequestJson;
+        syncActiveShortlist();
+        refreshOutputPanel(output_json, currentRequestJson);
+        checkAndShowForwardButton(output_json);
+      }
+      getActiveRecheckIndicator().classList.add('hidden');
+      autoSaveCurrentState();
+    } catch (e) {
+      console.error('Ask client error:', e);
+      appendSystemNotification('Failed to contact client. Please try again.', 'neutral');
+    }
+  }
+
+  async function requestApproval(rule) {
+    const esc = (loadedOutput?.escalations || []).find(e => e.rule === rule);
+    if (!esc) return;
+
+    const approver = INTERNAL_ESCALATIONS[rule];
+    if (!approver) return;
+
+    // Disable button
+    const btn = document.querySelector(`[data-request-approval="${rule}"]`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="animate-spin inline-block w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full"></span> Requesting...'; }
+
+    appendSystemNotification(`Requesting approval from ${approver.role}...`, 'neutral');
+    conversationMessages.push({ role: 'system-notification', content: `Requesting approval from ${approver.role}...`, style: 'neutral' });
+
+    // Simulated delay
+    await sleep(1500 + Math.random() * 1000);
+
+    // Show approval
+    const approvalMsg = `✓ Approved by ${approver.role} — ${approver.name}`;
+    appendSystemNotification(approvalMsg, 'success');
+    conversationMessages.push({ role: 'system-notification', content: approvalMsg, style: 'success' });
+
+    // Set override
+    const overrideKey = ESCALATION_OVERRIDE_KEYS[rule];
+    if (overrideKey) {
+      currentRequestJson.escalation_overrides = { ...(currentRequestJson.escalation_overrides || {}), [overrideKey]: true };
+    }
+
+    // Silent reprocess
+    getActiveRecheckIndicator().classList.remove('hidden');
+    try {
+      const proc = await fetch('/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_json: currentRequestJson }),
+      });
+      if (proc.ok) {
+        const { output_json } = await proc.json();
+        loadedOutput = output_json;
+        devData.output = output_json;
+        devData.parsed = currentRequestJson;
+        syncActiveShortlist();
+        refreshOutputPanel(output_json, currentRequestJson);
+        checkAndShowForwardButton(output_json);
+      }
+    } catch (_) {}
+    getActiveRecheckIndicator().classList.add('hidden');
+    autoSaveCurrentState();
+  }
+
+  // Initialize sidebar on load
+  renderSidebar();
 
   // ── Event listeners ───────────────────────────────────────────────────────
   // Single send button + input

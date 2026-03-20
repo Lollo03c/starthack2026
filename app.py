@@ -135,6 +135,50 @@ def chat_endpoint(body: ChatRequest):
     return run_chat_turn(body.messages, body.request_json, body.issues, body.original_request_text, body.field_provenance, body.supplier_shortlist)
 
 
+class SimulateClientRequest(BaseModel):
+    escalation_rule: str
+    escalation_trigger: str
+    request_json: dict
+    output_json: dict
+
+
+@app.post("/simulate-client")
+def simulate_client_endpoint(body: SimulateClientRequest):
+    from client_simulator import simulate_client_response  # noqa: PLC0415
+
+    try:
+        return simulate_client_response(
+            body.escalation_rule, body.escalation_trigger,
+            body.request_json, body.output_json,
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("simulate-client error: %s", e, exc_info=True)
+        if "rate_limit_exceeded" in str(e) or "429" in str(e):
+            raise HTTPException(status_code=429, detail="Groq API rate limit reached.")
+        raise HTTPException(status_code=500, detail=f"Client simulation failed: {e}")
+
+
+class SimulateClientValidationRequest(BaseModel):
+    field: str
+    question: str
+    request_json: dict
+
+
+@app.post("/simulate-client-validation")
+def simulate_client_validation_endpoint(body: SimulateClientValidationRequest):
+    from client_simulator import simulate_client_field_response  # noqa: PLC0415
+
+    try:
+        return simulate_client_field_response(body.field, body.question, body.request_json)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("simulate-client-validation error: %s", e, exc_info=True)
+        if "rate_limit_exceeded" in str(e) or "429" in str(e):
+            raise HTTPException(status_code=429, detail="Groq API rate limit reached.")
+        raise HTTPException(status_code=500, detail=f"Client field simulation failed: {e}")
+
+
 class ResultsChatRequest(BaseModel):
     messages: list
     output_json: dict
