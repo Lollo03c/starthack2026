@@ -24,13 +24,13 @@
   "validation": {
     "completeness": "pass",
     "issues_detected": [
-      {
-        "issue_id": "V-001",
-        "severity": "critical",
-        "type": "budget_insufficient",
-        "description": "Budget of EUR 25,199.55 cannot cover 240 units at any compliant supplier's standard pricing. Lowest available unit price is EUR 148.80 (Bechtle, tier 100–499), yielding a minimum total of EUR 35,712.00 — EUR 10,512.45 over budget.",
-        "action_required": "Requester must either increase budget to at least EUR 35,712 or reduce quantity to a maximum of 169 units within the stated budget."
-      },
+        {
+          "issue_id": "V-001",
+          "severity": "critical",
+          "type": "budget_insufficient",
+          "description": "Budget of EUR 25,199.55 cannot cover 240 units at any compliant supplier's standard pricing. Lowest available unit price is EUR 148.80 (Bechtle, tier 100–499), yielding a minimum total of EUR 35,712.00 — EUR 10,512.45 over budget.",
+          "action_required": "Requester must either increase budget to at least EUR 35,712 or reduce quantity to a maximum of 169 units within the stated budget."
+        },
       {
         "issue_id": "V-002",
         "severity": "high",

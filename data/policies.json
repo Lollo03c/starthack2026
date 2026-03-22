@@ -880,70 +880,135 @@
       "category_l1": "IT",
       "category_l2": "Laptops",
       "rule_type": "mandatory_comparison",
-      "rule_text": "At least three compliant supplier options must be compared above EUR/CHF 100000"
+      "rule_text": "At least three compliant supplier options must be compared above EUR/CHF 100000",
+      "structured_logic": {
+        "trigger_field": "budget_amount",
+        "threshold": 100000,
+        "currency_scope": ["EUR", "CHF"],
+        "requirement": "min_quotes_count",
+        "value": 3
+      }
     },
     {
       "rule_id": "CR-002",
       "category_l1": "IT",
       "category_l2": "Mobile Workstations",
       "rule_type": "engineering_spec_review",
-      "rule_text": "Mobile workstation requests above 50 units require compatibility review with engineering or CAD lead"
+      "rule_text": "Mobile workstation requests above 50 units require compatibility review with engineering or CAD lead",
+      "structured_logic": {
+        "trigger_field": "quantity",
+        "threshold": 50,
+        "action": "escalate",
+        "target": "Engineering/CAD Lead"
+      }
     },
     {
       "rule_id": "CR-003",
       "category_l1": "IT",
       "category_l2": "Replacement / Break-Fix Pool Devices",
       "rule_type": "fast_track",
-      "rule_text": "Break-fix pool replenishment below EUR/CHF 75000 may use fast-track approval with one quote"
+      "rule_text": "Break-fix pool replenishment below EUR/CHF 75000 may use fast-track approval with one quote",
+      "structured_logic": {
+        "trigger_field": "budget_amount",
+        "threshold_max": 75000,
+        "currency_scope": ["EUR", "CHF"],
+        "action": "set_min_quotes",
+        "value": 1
+      }
     },
     {
       "rule_id": "CR-004",
       "category_l1": "IT",
       "category_l2": "Cloud Compute",
       "rule_type": "residency_check",
-      "rule_text": "Requests marked with data residency constraint must be evaluated only against suppliers supporting residency requirements"
+      "rule_text": "Requests marked with data residency constraint must be evaluated only against suppliers supporting residency requirements",
+      "structured_logic": {
+        "trigger_field": "data_residency_constraint",
+        "trigger_value": true,
+        "action": "filter_suppliers_by_capability",
+        "capability_required": "data_residency_support"
+      }
     },
     {
       "rule_id": "CR-005",
       "category_l1": "IT",
       "category_l2": "Managed Cloud Platform Services",
       "rule_type": "security_review",
-      "rule_text": "Managed platform requests above EUR/CHF 250000 require security architecture review"
+      "rule_text": "Managed platform requests above EUR/CHF 250000 require security architecture review",
+      "structured_logic": {
+        "trigger_field": "budget_amount",
+        "threshold": 250000,
+        "currency_scope": ["EUR", "CHF"],
+        "action": "escalate",
+        "target": "Security Architecture"
+      }
     },
     {
       "rule_id": "CR-006",
       "category_l1": "Facilities",
       "category_l2": "Reception and Lounge Furniture",
       "rule_type": "design_signoff",
-      "rule_text": "Reception and lounge projects require business design sign-off before award"
+      "rule_text": "Reception and lounge projects require business design sign-off before award",
+      "structured_logic": {
+        "trigger_field": "category_l2",
+        "trigger_value": "Reception and Lounge Furniture",
+        "action": "require_signoff",
+        "target": "Business Design"
+      }
     },
     {
       "rule_id": "CR-007",
       "category_l1": "Professional Services",
       "category_l2": "Software Development Services",
       "rule_type": "cv_review",
-      "rule_text": "Named consultant CVs or equivalent capability profiles are required above 60 consulting days"
+      "rule_text": "Named consultant CVs or equivalent capability profiles are required above 60 consulting days",
+      "structured_logic": {
+        "trigger_field": "quantity",
+        "threshold": 60,
+        "uom_required": "days",
+        "action": "require_document",
+        "doc_type": "CV_profiles"
+      }
     },
     {
       "rule_id": "CR-008",
       "category_l1": "Professional Services",
       "category_l2": "Cybersecurity Advisory",
       "rule_type": "certification_check",
-      "rule_text": "Cybersecurity advisory suppliers must demonstrate relevant certifications or equivalent references"
+      "rule_text": "Cybersecurity advisory suppliers must demonstrate relevant certifications or equivalent references",
+      "structured_logic": {
+        "trigger_field": "category_l2",
+        "trigger_value": "Cybersecurity Advisory",
+        "action": "validate_supplier_attribute",
+        "attribute": "certifications"
+      }
     },
     {
       "rule_id": "CR-009",
       "category_l1": "Marketing",
       "category_l2": "Search Engine Marketing (SEM)",
       "rule_type": "performance_baseline",
-      "rule_text": "SEM proposals should include performance baseline or benchmark assumptions"
+      "rule_text": "SEM proposals should include performance baseline or benchmark assumptions",
+      "structured_logic": {
+        "trigger_field": "category_l2",
+        "trigger_value": "Search Engine Marketing (SEM)",
+        "action": "require_document",
+        "doc_type": "performance_baseline"
+      }
     },
     {
       "rule_id": "CR-010",
       "category_l1": "Marketing",
       "category_l2": "Influencer Campaign Management",
       "rule_type": "brand_safety",
-      "rule_text": "Influencer campaigns require brand-safety review before final award"
+      "rule_text": "Influencer campaigns require brand-safety review before final award",
+      "structured_logic": {
+        "trigger_field": "category_l2",
+        "trigger_value": "Influencer Campaign Management",
+        "action": "escalate",
+        "target": "Marketing Governance Lead",
+        "escalation_code": "ER-007"
+      }
     }
   ],
   "geography_rules": [

@@ -21,6 +21,20 @@ The agent:
 
 Every decision is traceable: the output includes a full audit trail of policies checked, suppliers evaluated, and data sources used.
 
+## Architecture
+
+![Pipeline Architecture](Gemini_Generated_Image_wfjivawfjivawfji.png)
+
+**Flow summary:**
+
+1. **Unstructured Input** — Free-text procurement request from the user
+2. **Structured Text** — LLM parses input into `request_json`
+3. **Validation** — Structural + semantic checks; if invalid data → loops back to **User Interaction** to clarify
+4. **Policy Checks** — Filters by category, geo, capacity, budget, lead time; escalations → routed to **User Interaction** for resolution
+5. **Ranking Suppliers** — Scores and ranks by quality, risk, ESG, price
+6. **Synthesis Audit** — Produces ranked shortlist, policies, and full audit trail
+
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -138,46 +152,7 @@ The 304 requests in `data/requests.json` are tagged with scenario types indicati
 | `capacity` | 18 | Requested quantity exceeds supplier's monthly capacity |
 | `multi_country` | 3 | Delivery across multiple countries with different compliance requirements |
 
-## Architecture
-
-```
-                  ┌─────────────┐
-  Free-text  ───► │  LLM Parse  │ ──► request_json
-  request         └─────────────┘
-                        │
-                  ┌─────────────┐
-                  │  Validate   │ ──► issues (structural + semantic)
-                  └─────────────┘
-                        │
-              ┌─────────┴─────────┐
-              │  Missing fields?  │──yes──► Chat with client
-              └─────────┬─────────┘
-                        │ no
-                  ┌─────────────┐
-                  │  3-Phase    │
-                  │  Engine     │
-                  │  ┌─────────┐│
-                  │  │ Phase 0 ││ Parse → RequestContext
-                  │  │ Phase 1 ││ Filter (category, geo, capacity, budget, lead time)
-                  │  │ Phase 2 ││ Score + Rank (quality, risk, ESG, price)
-                  │  └─────────┘│
-                  └─────────────┘
-                        │
-                  ┌─────────────┐
-                  │  Output     │ ──► ranked shortlist + policies + escalations
-                  │  Builder    │     + audit trail
-                  └─────────────┘
-                        │
-                  ┌─────────────┐
-                  │  Results    │ ──► chat presentation + Q&A
-                  │  Chat Agent │     + escalation resolution
-                  └─────────────┘
-                        │
-                  ┌─────────────┐
-                  │  Create PO  │ ──► when all escalations resolved
-                  └─────────────┘
-```
 
 ## Team
 
-Built by a team of 4 at StartHack 2026, St. Gallen, Switzerland.
+Built by a Lorenzo Baggi, Marco De Negri, Vassili De Palma and Luca Sartori at StartHack 2026, St. Gallen, Switzerland.
