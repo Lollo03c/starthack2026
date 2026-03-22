@@ -155,4 +155,4 @@ The 304 requests in `data/requests.json` are tagged with scenario types indicati
 
 ## Team
 
-Built by a Lorenzo Baggi, Marco De Negri, Vassili De Palma and Luca Sartori at StartHack 2026, St. Gallen, Switzerland.
+Built by [Lollo03c](https://github.com/Lollo03c), [marcodene](https://github.com/marcodene), [vassili-de-palma](https://github.com/vassili-de-palma), and [Luca-Sartori](https://github.com/Luca-Sartori) at StartHack 2026, St. Gallen, Switzerland.
